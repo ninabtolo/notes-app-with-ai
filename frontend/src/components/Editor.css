@@ -1,0 +1,10 @@
+[contenteditable]::selection {
+  background: rgba(79, 70, 229, 0.2);
+}
+
+[contenteditable] u,
+[contenteditable] span[style*="text-decoration: underline"],
+[contenteditable] span[style*="text-decoration:underline"] {
+  text-decoration-color: inherit;
+  -webkit-text-decoration-color: inherit;
+}
