@@ -25,6 +25,8 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState<boolean>(false);
   const [isSuggestionEnabled, setIsSuggestionEnabled] = useState<boolean>(false);
   const lastCursorPosition = useRef<Range | null>(null);
+  const [suggestionPosition, setSuggestionPosition] = useState<{top: number, left: number} | null>(null);
+  const suggestionRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -154,6 +156,28 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     });
   };
 
+  const calculateCursorPosition = () => {
+    if (!editorRef.current) return;
+    
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const editorRect = editorRef.current.getBoundingClientRect();
+    
+    const top = rect.bottom - editorRect.top;
+    const left = rect.left - editorRect.left;
+    
+    const maxWidth = 500;
+    const rightEdge = left + maxWidth;
+    const editorWidth = editorRect.width;
+    
+    const adjustedLeft = rightEdge > editorWidth ? editorWidth - maxWidth : left;
+    
+    setSuggestionPosition({ top, left: Math.max(0, adjustedLeft) });
+  };
+
   const requestSuggestion = useCallback(
     debounce(async () => {
       if (!isSuggestionEnabled || !editorRef.current || isGeneratingSuggestion) return;
@@ -169,6 +193,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
         lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
+        calculateCursorPosition();
       }
       
       setIsGeneratingSuggestion(true);
@@ -263,6 +288,44 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
       setShowSuggestion(false);
     }
   };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!showSuggestion || !suggestion) return;
+      
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        acceptSuggestion();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        rejectSuggestion();
+      }
+    };
+    
+    if (editorRef.current) {
+      editorRef.current.addEventListener('keydown', handleKeyDown);
+    }
+    
+    return () => {
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [showSuggestion, suggestion]);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      if (showSuggestion && suggestion) {
+        calculateCursorPosition();
+      }
+    };
+    
+    document.addEventListener('selectionchange', handleSelectionChange);
+    
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [showSuggestion, suggestion]);
 
   if (!note) {
     return (
@@ -383,40 +446,53 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           </div>
         </div>
 
-        <div
-          ref={editorRef}
-          contentEditable
-          onInput={handleContentChange}
-          className="w-full h-[calc(100vh-320px)] focus:outline-none overflow-y-auto"
-          placeholder="Start writing your note..."
-        />
-        
-        {showSuggestion && suggestion && (
-          <div className="suggestion-container">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
-              <div className="flex space-x-2">
-                <button 
-                  onClick={acceptSuggestion}
-                  className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
-                  title="Aceitar sugestão"
-                >
-                  <Check className="w-4 h-4" />
-                </button>
-                <button 
-                  onClick={rejectSuggestion}
-                  className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
-                  title="Recusar sugestão"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+        <div className="editor-container">
+          <div
+            ref={editorRef}
+            contentEditable
+            onInput={handleContentChange}
+            className="w-full h-full focus:outline-none overflow-y-auto"
+            placeholder="Start writing your note..."
+          />
+          
+          {showSuggestion && suggestion && suggestionPosition && (
+            <div 
+              ref={suggestionRef}
+              className="suggestion-container"
+              style={{
+                top: `${suggestionPosition.top}px`,
+                left: `${suggestionPosition.left}px`,
+              }}
+            >
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
+                <div className="flex space-x-2">
+                  <button 
+                    onClick={acceptSuggestion}
+                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                    title="Aceitar sugestão"
+                  >
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={rejectSuggestion}
+                    className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
+                    title="Recusar sugestão"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="suggestion-text">
+                {suggestion}
+              </div>
+              <div className="shortcuts-hint">
+                <span><span className="shortcut-key">Tab</span> para aceitar</span>
+                <span><span className="shortcut-key">Esc</span> para recusar</span>
               </div>
             </div>
-            <div className="suggestion-text">
-              {suggestion}
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       
       {showGeminiChat && (

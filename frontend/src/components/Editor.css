@@ -10,11 +10,14 @@
 }
 
 .suggestion-container {
+  position: absolute;
   border-left: 3px solid #6c757d;
-  margin-top: 8px;
   background-color: #f8f9fa;
   padding: 8px;
   border-radius: 4px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  max-width: 500px;
+  z-index: 100;
 }
 
 .suggestion-text {
@@ -28,4 +31,25 @@
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+.editor-container {
+  position: relative;
+  width: 100%;
+  height: calc(100vh-320px);
+}
+
+.shortcuts-hint {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6c757d;
+}
+
+.shortcut-key {
+  background-color: #e9ecef;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: monospace;
 }
