@@ -9,6 +9,84 @@
   -webkit-text-decoration-color: inherit;
 }
 
+.custom-scrollbar::-webkit-scrollbar,
+.editor-container div::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track,
+.editor-container div::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.5);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb,
+.editor-container div::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover,
+.editor-container div::-webkit-scrollbar-thumb:hover,
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.7);
+}
+
+.custom-scrollbar,
+.editor-container div[contenteditable],
+.overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) rgba(241, 245, 249, 0.5);
+}
+
+.absolute.right-0.top-0.h-full {
+  border-left: 1px solid #e2e8f0;
+}
+
+.flex-1.flex.relative {
+  overflow: hidden; 
+}
+
+.chat-container {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 30%;
+  height: 100%;
+  border-left: 1px solid #e2e8f0;
+  z-index: 100;
+  background-color: white;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s ease-out; 
+  transform: translateX(0); 
+}
+
+.chat-container-enter {
+  transform: translateX(100%); 
+}
+
+.chat-container-visible {
+  transform: translateX(0);
+}
+
+.flex-1.p-6.space-y-4 {
+  max-width: 100%;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.flex.items-center.justify-between .flex.items-center.space-x-2 {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
 .suggestion-container {
   position: absolute;
   border-left: 3px solid #6c757d;
@@ -17,7 +95,7 @@
   border-radius: 4px;
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   max-width: 500px;
-  z-index: 100;
+  z-index: 1000000;
 }
 
 .suggestion-text {
@@ -36,7 +114,24 @@
 .editor-container {
   position: relative;
   width: 100%;
-  height: calc(100vh-320px);
+  height: calc(100vh - 180px);
+  overflow: visible; /* Changed from hidden to ensure suggestion container is fully visible */
+}
+
+.editor-container div[contenteditable] {
+  height: 100%;
+  padding-right: 8px; 
+  padding-bottom: 60px; 
+  overflow-y: auto;
+}
+
+button[aria-label="Fechar chat"] {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 20;
+  background-color: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .shortcuts-hint {

@@ -397,7 +397,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 let mainWindow;
 app.whenReady().then(() => {
   mainWindow = new BrowserWindow({
-    width: 1e3,
+    width: 1200,
     height: 700,
     webPreferences: {
       nodeIntegration: true,

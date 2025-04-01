@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
-import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb } from 'lucide-react'; 
+import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings } from 'lucide-react'; 
 import html2pdf from 'html2pdf.js';
 import { ipcRenderer } from 'electron';
 import './Editor.css';
@@ -27,6 +27,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number } | null>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const [recentlyAcceptedSuggestion, setRecentlyAcceptedSuggestion] = useState<boolean>(false);
+  const [chatVisible, setChatVisible] = useState<boolean>(false);
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsDropdownRef = useRef<HTMLDivElement>(null);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -165,17 +169,41 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     const editorRect = editorRef.current.getBoundingClientRect();
+    const scrollTop = editorRef.current.scrollTop;
 
-    const top = rect.bottom - editorRect.top;
-    const left = rect.left - editorRect.left;
+    const estimatedSuggestionHeight = 120; 
+    const estimatedSuggestionWidth = 300;
 
-    const maxWidth = 500;
-    const rightEdge = left + maxWidth;
-    const editorWidth = editorRect.width;
+    let top = rect.bottom - editorRect.top + scrollTop;
+    let left = rect.left - editorRect.left;
 
-    const adjustedLeft = rightEdge > editorWidth ? editorWidth - maxWidth : left;
+    const visibleEditorHeight = editorRect.height;
+    const visibleEditorWidth = editorRect.width;
+    
+    if (top + estimatedSuggestionHeight > scrollTop + visibleEditorHeight) {
+      top = rect.top - editorRect.top - estimatedSuggestionHeight + scrollTop;
+    }
+    
+    if (top < scrollTop) {
+      top = scrollTop + 5;
+    }
+    
+    if (top + estimatedSuggestionHeight > scrollTop + visibleEditorHeight) {
+      top = (scrollTop + visibleEditorHeight) - estimatedSuggestionHeight - 5;
+    }
+    
+    if (left + estimatedSuggestionWidth > visibleEditorWidth) {
+      left = visibleEditorWidth - estimatedSuggestionWidth - 5;
+    }
+    
+    if (left < 0) {
+      left = 5;
+    }
 
-    setSuggestionPosition({ top, left: Math.max(0, adjustedLeft) });
+    top = Math.max(scrollTop + 5, Math.min(scrollTop + visibleEditorHeight - estimatedSuggestionHeight - 5, top));
+    left = Math.max(5, Math.min(visibleEditorWidth - estimatedSuggestionWidth - 5, left));
+
+    setSuggestionPosition({ top, left });
   };
 
   const requestSuggestion = useCallback(
@@ -350,6 +378,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     }
   };
 
+  const toggleChat = () => {
+    setShowGeminiChat(!showGeminiChat);
+  };
+
+  const toggleSettingsDropdown = () => {
+    setShowSettingsDropdown(!showSettingsDropdown);
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!showSuggestion || !suggestion) return;
@@ -414,6 +450,46 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     };
   }, [showSuggestion, suggestion]);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        settingsButtonRef.current && 
+        settingsDropdownRef.current && 
+        !settingsButtonRef.current.contains(event.target as Node) && 
+        !settingsDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowSettingsDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (showGeminiChat) {
+      setChatVisible(true);
+      setTimeout(() => {
+        const chatContainer = document.querySelector('.chat-container');
+        if (chatContainer) {
+          chatContainer.classList.remove('chat-container-enter');
+          chatContainer.classList.add('chat-container-visible');
+        }
+      }, 10);
+    } else {
+      const chatContainer = document.querySelector('.chat-container');
+      if (chatContainer) {
+        chatContainer.classList.remove('chat-container-visible');
+        chatContainer.classList.add('chat-container-enter');
+      }
+      setTimeout(() => {
+        setChatVisible(false);
+      }, 300);
+    }
+  }, [showGeminiChat]);
+
   if (!note) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -423,40 +499,63 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   }
 
   return (
-    <div className="flex-1 flex">
-      <div className={`flex-1 p-6 space-y-4 ${showGeminiChat ? 'w-2/3' : 'w-full'}`}>
+    <div className="flex-1 flex relative">
+      <div className="flex-1 p-6 space-y-4 editor-main-container">
         <div className="flex items-center justify-between">
           <input
             type="text"
             value={note?.title || ''}
             onChange={handleTitleChange}
             placeholder="Note title"
-            className="flex-1 text-4xl font-bold focus:outline-none"
+            className="flex-1 text-4xl font-bold focus:outline-none leading-relaxed"
           />
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 editor-buttons">
+            <div className="relative">
+              <button
+                ref={settingsButtonRef}
+                onClick={toggleSettingsDropdown}
+                className="flex items-center justify-center p-2 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition"
+                title="Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+              {showSettingsDropdown && (
+                <div 
+                  ref={settingsDropdownRef}
+                  className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded p-2 z-20 w-48"
+                >
+                  <button 
+                    onClick={() => {
+                      toggleSuggestions();
+                      setShowSettingsDropdown(false);
+                    }} 
+                    className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-100 rounded"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <Lightbulb className="w-4 h-4" />
+                      <span>AI suggestions</span>
+                    </div>
+                    {isSuggestionEnabled && <Check className="w-4 h-4 ml-2 text-black" />}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      exportToPDF();
+                      setShowSettingsDropdown(false);
+                    }} 
+                    className="w-full flex items-center space-x-2 px-4 py-2 hover:bg-gray-100 rounded"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Export PDF</span>
+                  </button>
+                </div>
+              )}
+            </div>
             <button
-              onClick={toggleSuggestions}
-              className={`flex items-center space-x-1 px-3 py-2 text-white rounded transition ${
-                isSuggestionEnabled ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-500 hover:bg-gray-600'
-              }`}
-              title={isSuggestionEnabled ? 'Desativar sugestões' : 'Ativar sugestões'}
-            >
-              <Lightbulb className="w-5 h-5" />
-              <span>Sugestões</span>
-            </button>
-            <button
-              onClick={() => setShowGeminiChat(!showGeminiChat)}
-              className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+              onClick={toggleChat}
+              className="flex items-center justify-center p-2 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition"
+              title={showGeminiChat ? "Close AI" : "Open AI"}
             >
               <MessageSquare className="w-5 h-5" />
-              <span>{showGeminiChat ? 'Fechar IA' : 'Abrir IA'}</span>
-            </button>
-            <button
-              onClick={exportToPDF}
-              className="flex items-center space-x-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
-            >
-              <Download className="w-5 h-5" />
-              <span>Export PDF</span>
             </button>
           </div>
         </div>
@@ -557,7 +656,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             ref={editorRef}
             contentEditable
             onInput={handleContentChange}
-            className="w-full h-full focus:outline-none overflow-y-auto"
+            className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
             placeholder="Start writing your note..."
           />
 
@@ -569,22 +668,22 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                 top: `${suggestionPosition.top}px`,
                 left: `${suggestionPosition.left}px`,
               }}
-              onMouseDown={(e) => e.stopPropagation()} // Prevent selection changes when clicking on suggestion box
+              onMouseDown={(e) => e.stopPropagation()} 
             >
               <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
+                <span className="text-xs font-semibold text-gray-500">Gemini Suggestion</span>
                 <div className="flex space-x-2">
                   <button
                     onClick={acceptSuggestion}
                     className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
-                    title="Aceitar sugestão"
+                    title="Accept suggestion"
                   >
                     <Check className="w-4 h-4" />
                   </button>
                   <button
                     onClick={rejectSuggestion}
                     className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
-                    title="Recusar sugestão"
+                    title="Reject suggestion"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -593,10 +692,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
               <div className="suggestion-text">{suggestion}</div>
               <div className="shortcuts-hint">
                 <span>
-                  <span className="shortcut-key">Tab</span> para aceitar
+                  <span className="shortcut-key">Tab</span> to accept
                 </span>
                 <span>
-                  <span className="shortcut-key">Esc</span> para recusar
+                  <span className="shortcut-key">Esc</span> to reject
                 </span>
               </div>
             </div>
@@ -604,9 +703,9 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         </div>
       </div>
 
-      {showGeminiChat && (
-        <div className="w-1/3 border-l border-gray-200">
-          <GeminiChat />
+      {chatVisible && (
+        <div className="chat-container chat-container-enter">
+          <GeminiChat onClose={() => setShowGeminiChat(false)} />
         </div>
       )}
     </div>
