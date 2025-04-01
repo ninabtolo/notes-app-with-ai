@@ -671,11 +671,11 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
               onMouseDown={(e) => e.stopPropagation()} 
             >
               <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-semibold text-gray-500">Gemini Suggestion</span>
+                <span className="text-xs font-semibold text-purple-600">Gemini Suggestion</span>
                 <div className="flex space-x-2">
                   <button
                     onClick={acceptSuggestion}
-                    className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                    className="p-1 bg-purple-500 text-white rounded hover:bg-purple-600"
                     title="Accept suggestion"
                   >
                     <Check className="w-4 h-4" />

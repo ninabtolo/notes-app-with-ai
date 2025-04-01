@@ -16,7 +16,7 @@ export function Sidebar({ notes, activeNoteId, onNoteSelect, onDeleteNote, onNew
       <div className="p-4">
         <button
           onClick={onNewNote}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors mb-4"
+          className="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors mb-4"
         >
           New Note
         </button>
@@ -34,7 +34,7 @@ export function Sidebar({ notes, activeNoteId, onNoteSelect, onDeleteNote, onNew
               <div
                 key={note.id}
                 className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                  activeNoteId === note.id ? 'bg-blue-100' : 'hover:bg-gray-100'
+                  activeNoteId === note.id ? 'bg-violet-100' : 'hover:bg-gray-100'
                 }`}
                 onClick={() => onNoteSelect(note.id)}
               >

@@ -52,14 +52,14 @@ function GeminiChat({ onClose }: GeminiChatProps) {
       {/* Repositioned close button to absolute top-right */}
       <button 
         onClick={onClose}
-        className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-indigo-100 bg-white text-indigo-700 transition-colors z-20 shadow-sm"
+        className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-purple-100 bg-white text-purple-700 transition-colors z-20 shadow-sm"
         aria-label="Fechar chat"
       >
         <X size={18} />
       </button>
       
-      <div className="p-4 pt-8 bg-indigo-50 border-b rounded-tl-lg">
-        <h2 className="text-lg font-medium text-indigo-800">Chat com IA</h2>
+      <div className="p-4 pt-8 bg-purple-50 border-b rounded-tl-lg">
+        <h2 className="text-lg font-medium text-purple-800">Chat com IA</h2>
         <p className="text-sm text-gray-600">Faça perguntas ou peça ajuda com suas notas</p>
       </div>
       
@@ -74,7 +74,7 @@ function GeminiChat({ onClose }: GeminiChatProps) {
               key={idx} 
               className={`p-3 rounded-lg ${
                 msg.role === 'user' 
-                  ? 'bg-indigo-100 ml-8' 
+                  ? 'bg-purple-100 ml-8' 
                   : 'bg-white border border-gray-200 mr-8'
               }`}
             >
@@ -96,7 +96,7 @@ function GeminiChat({ onClose }: GeminiChatProps) {
         />
         <button
           onClick={handleSubmit}
-          className="mt-2 w-full p-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
+          className="mt-2 w-full p-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
           disabled={loading || !prompt.trim()}
         >
           {loading ? 'Carregando...' : 'Enviar'}

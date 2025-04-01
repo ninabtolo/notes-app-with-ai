@@ -1,5 +1,5 @@
 [contenteditable]::selection {
-  background: rgba(79, 70, 229, 0.2);
+  background: rgba(139, 92, 246, 0.2); /* Changed to violet-500 with transparency */
 }
 
 [contenteditable] u,
@@ -89,7 +89,7 @@
 
 .suggestion-container {
   position: absolute;
-  border-left: 3px solid #6c757d;
+  border-left: 3px solid #8b5cf6; /* Changed to violet-500 */
   background-color: #f8f9fa;
   padding: 8px;
   border-radius: 4px;
