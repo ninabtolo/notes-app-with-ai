@@ -19,14 +19,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [dropdown, setDropdown] = useState<string | null>(null);
   const [savedRange, setSavedRange] = useState<Range | null>(null);
   const [showGeminiChat, setShowGeminiChat] = useState<boolean>(false);
-  
   const [suggestion, setSuggestion] = useState<string>('');
   const [showSuggestion, setShowSuggestion] = useState<boolean>(false);
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState<boolean>(false);
   const [isSuggestionEnabled, setIsSuggestionEnabled] = useState<boolean>(false);
   const lastCursorPosition = useRef<Range | null>(null);
-  const [suggestionPosition, setSuggestionPosition] = useState<{top: number, left: number} | null>(null);
+  const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number } | null>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
+  const [recentlyAcceptedSuggestion, setRecentlyAcceptedSuggestion] = useState<boolean>(false);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -62,7 +62,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           const isUnderlined = document.queryCommandState('underline');
           const fontSize = document.queryCommandValue('fontSize');
           const textColor = document.queryCommandValue('foreColor');
-          
+
           document.execCommand('removeFormat', false);
 
           if (isBold) document.execCommand('bold', false);
@@ -70,7 +70,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           if (isUnderlined) document.execCommand('underline', false);
           if (fontSize) document.execCommand('fontSize', false, fontSize);
           if (textColor) document.execCommand('foreColor', false, textColor);
-          
+
           handleContentChange();
           setDropdown(null);
           return;
@@ -80,23 +80,23 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         if (selection && selection.rangeCount > 0) {
           const range = selection.getRangeAt(0);
           const fragment = range.cloneContents();
-          
+
           const tempDiv = document.createElement('div');
           tempDiv.appendChild(fragment);
-          
+
           const textNodes = getAllTextNodes(tempDiv);
           if (textNodes.length > 0) {
-            textNodes.forEach(node => {
+            textNodes.forEach((node) => {
               const span = document.createElement('span');
               span.style.backgroundColor = value || '';
-              
+
               if (node.parentNode) {
                 const text = node.textContent;
                 span.textContent = text;
                 node.parentNode.replaceChild(span, node);
               }
             });
-            
+
             range.deleteContents();
             range.insertNode(tempDiv);
             handleContentChange();
@@ -106,7 +106,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         }
       }
     }
-    
+
     document.execCommand(command, false, value);
     handleContentChange();
     setDropdown(null);
@@ -115,14 +115,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const getAllTextNodes = (element: Node): Text[] => {
     const textNodes: Text[] = [];
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-    
+
     let node: Node | null;
-    while (node = walker.nextNode()) {
+    while ((node = walker.nextNode())) {
       if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
         textNodes.push(node as Text);
       }
     }
-    
+
     return textNodes;
   };
 
@@ -137,8 +137,8 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   useEffect(() => {
     if (note) {
-      onUpdateNote(note); 
-      ipcRenderer.send('save-notes', notes); 
+      onUpdateNote(note);
+      ipcRenderer.send('save-notes', notes);
     }
   }, [note, notes]);
 
@@ -158,50 +158,54 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   const calculateCursorPosition = () => {
     if (!editorRef.current) return;
-    
+
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
-    
+
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     const editorRect = editorRef.current.getBoundingClientRect();
-    
+
     const top = rect.bottom - editorRect.top;
     const left = rect.left - editorRect.left;
-    
+
     const maxWidth = 500;
     const rightEdge = left + maxWidth;
     const editorWidth = editorRect.width;
-    
+
     const adjustedLeft = rightEdge > editorWidth ? editorWidth - maxWidth : left;
-    
+
     setSuggestionPosition({ top, left: Math.max(0, adjustedLeft) });
   };
 
   const requestSuggestion = useCallback(
     debounce(async () => {
       if (!isSuggestionEnabled || !editorRef.current || isGeneratingSuggestion) return;
-      
-      const textContent = editorRef.current.textContent || '';
-      
-      if (textContent.length < 30) {
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
+      calculateCursorPosition();
+
+      const { textBefore, textAfter } = getTextContextAroundCursor();
+
+      if (textBefore.length < 20) {
         setSuggestion('');
         setShowSuggestion(false);
         return;
       }
-      
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
-        calculateCursorPosition();
-      }
-      
+
       setIsGeneratingSuggestion(true);
       try {
-        const newSuggestion = await generateSuggestion(textContent);
+        const newSuggestion = await generateSuggestion(textBefore, textAfter, recentlyAcceptedSuggestion);
         if (newSuggestion && newSuggestion.trim()) {
           setSuggestion(newSuggestion.trim());
           setShowSuggestion(true);
+
+          if (recentlyAcceptedSuggestion) {
+            setRecentlyAcceptedSuggestion(false);
+          }
         }
       } catch (error) {
         console.error('Error generating suggestion:', error);
@@ -209,29 +213,80 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         setIsGeneratingSuggestion(false);
       }
     }, 1500),
-    [isGeneratingSuggestion, isSuggestionEnabled]
+    [isGeneratingSuggestion, isSuggestionEnabled, recentlyAcceptedSuggestion]
   );
+
+  const getTextContextAroundCursor = () => {
+    if (!editorRef.current) return { textBefore: '', textAfter: '' };
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return { textBefore: '', textAfter: '' };
+
+    const range = selection.getRangeAt(0).cloneRange();
+
+    const beforeRange = document.createRange();
+    beforeRange.setStart(editorRef.current, 0);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+
+    const tempBeforeDiv = document.createElement('div');
+    tempBeforeDiv.appendChild(beforeRange.cloneContents());
+    const textBefore = tempBeforeDiv.textContent || '';
+
+    const afterRange = document.createRange();
+    afterRange.setStart(range.startContainer, range.startOffset);
+    afterRange.selectNodeContents(editorRef.current);
+
+    const tempAfterDiv = document.createElement('div');
+    tempAfterDiv.appendChild(afterRange.cloneContents());
+    const textAfter = tempAfterDiv.textContent || '';
+
+    return { textBefore, textAfter };
+  };
 
   const acceptSuggestion = () => {
     if (!editorRef.current || !suggestion) return;
-    
+
     if (lastCursorPosition.current) {
       const selection = window.getSelection();
       if (selection) {
         selection.removeAllRanges();
         selection.addRange(lastCursorPosition.current);
       }
-      
+
       const span = document.createElement('span');
       span.innerHTML = ` ${suggestion}`;
+
       lastCursorPosition.current.insertNode(span);
-      
+
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      range.collapse(false);
+
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      lastCursorPosition.current = range.cloneRange();
+
+      setRecentlyAcceptedSuggestion(true);
+
       handleContentChange();
     } else {
       editorRef.current.innerHTML += ` ${suggestion}`;
+
+      const range = document.createRange();
+      const selection = window.getSelection();
+
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      setRecentlyAcceptedSuggestion(true);
+
       handleContentChange();
     }
-    
+
     setSuggestion('');
     setShowSuggestion(false);
   };
@@ -248,9 +303,15 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         content: editorRef.current.innerHTML,
         updatedAt: new Date(),
       });
-      
+
       if (isSuggestionEnabled) {
-        requestSuggestion();
+        if (recentlyAcceptedSuggestion) {
+          setTimeout(() => {
+            requestSuggestion();
+          }, 800);
+        } else {
+          requestSuggestion();
+        }
       }
     }
   };
@@ -266,16 +327,16 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     `;
 
     const opt = {
-      margin: [1, 0.5, 1, 0.5], 
+      margin: [1, 0.5, 1, 0.5],
       filename: `${note.title || 'note'}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { 
+      html2canvas: {
         scale: 2,
         useCORS: true,
         scrollY: 0,
-        windowHeight: document.documentElement.offsetHeight
+        windowHeight: document.documentElement.offsetHeight,
       },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
     };
 
     html2pdf().set(opt).from(content).save();
@@ -292,7 +353,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!showSuggestion || !suggestion) return;
-      
+
       if (e.key === 'Tab' && !e.shiftKey) {
         e.preventDefault();
         acceptSuggestion();
@@ -301,11 +362,11 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         rejectSuggestion();
       }
     };
-    
+
     if (editorRef.current) {
       editorRef.current.addEventListener('keydown', handleKeyDown);
     }
-    
+
     return () => {
       if (editorRef.current) {
         editorRef.current.removeEventListener('keydown', handleKeyDown);
@@ -314,16 +375,42 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   }, [showSuggestion, suggestion]);
 
   useEffect(() => {
-    const handleSelectionChange = () => {
-      if (showSuggestion && suggestion) {
-        calculateCursorPosition();
+    const handleSelectionChange = (e: Event) => {
+      if (!showSuggestion || !suggestion) return;
+      
+      if (suggestionRef.current && e instanceof MouseEvent) {
+        const clickedElement = e.target as Node;
+        if (suggestionRef.current.contains(clickedElement)) {
+          return;
+        }
+      }
+
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.startContainer;
+
+        if (editorRef.current && editorRef.current.contains(container)) {
+          calculateCursorPosition();
+        }
       }
     };
-    
+
     document.addEventListener('selectionchange', handleSelectionChange);
     
+    const handleSuggestionClick = (e: MouseEvent) => {
+      e.stopPropagation(); 
+    };
+    
+    if (suggestionRef.current) {
+      suggestionRef.current.addEventListener('mousedown', handleSuggestionClick);
+    }
+
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
+      if (suggestionRef.current) {
+        suggestionRef.current.removeEventListener('mousedown', handleSuggestionClick);
+      }
     };
   }, [showSuggestion, suggestion]);
 
@@ -347,22 +434,24 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             className="flex-1 text-4xl font-bold focus:outline-none"
           />
           <div className="flex items-center space-x-2">
-            <button 
+            <button
               onClick={toggleSuggestions}
-              className={`flex items-center space-x-1 px-3 py-2 text-white rounded transition ${isSuggestionEnabled ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-500 hover:bg-gray-600'}`}
-              title={isSuggestionEnabled ? "Desativar sugestões" : "Ativar sugestões"}
+              className={`flex items-center space-x-1 px-3 py-2 text-white rounded transition ${
+                isSuggestionEnabled ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-500 hover:bg-gray-600'
+              }`}
+              title={isSuggestionEnabled ? 'Desativar sugestões' : 'Ativar sugestões'}
             >
               <Lightbulb className="w-5 h-5" />
               <span>Sugestões</span>
             </button>
-            <button 
+            <button
               onClick={() => setShowGeminiChat(!showGeminiChat)}
               className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
             >
               <MessageSquare className="w-5 h-5" />
               <span>{showGeminiChat ? 'Fechar IA' : 'Abrir IA'}</span>
             </button>
-            <button 
+            <button
               onClick={exportToPDF}
               className="flex items-center space-x-1 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition"
             >
@@ -383,10 +472,18 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             </button>
             {dropdown === 'fontSize' && (
               <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                <button onClick={() => applyFormatting('fontSize', '2')} className="block px-4 py-2 hover:bg-gray-100">Small</button>
-                <button onClick={() => applyFormatting('fontSize', '3')} className="block px-4 py-2 hover:bg-gray-100">Normal</button>
-                <button onClick={() => applyFormatting('fontSize', '4')} className="block px-4 py-2 hover:bg-gray-100">Large</button>
-                <button onClick={() => applyFormatting('fontSize', '5')} className="block px-4 py-2 hover:bg-gray-100">Extra L</button>
+                <button onClick={() => applyFormatting('fontSize', '2')} className="block px-4 py-2 hover:bg-gray-100">
+                  Small
+                </button>
+                <button onClick={() => applyFormatting('fontSize', '3')} className="block px-4 py-2 hover:bg-gray-100">
+                  Normal
+                </button>
+                <button onClick={() => applyFormatting('fontSize', '4')} className="block px-4 py-2 hover:bg-gray-100">
+                  Large
+                </button>
+                <button onClick={() => applyFormatting('fontSize', '5')} className="block px-4 py-2 hover:bg-gray-100">
+                  Extra L
+                </button>
               </div>
             )}
           </div>
@@ -424,7 +521,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                 <button onClick={() => applyFormatting('backColor', '#6ee7b7')} className="w-6 h-6 bg-[#6ee7b7] rounded" />
                 <button onClick={() => applyFormatting('backColor', '#fbbf24')} className="w-6 h-6 bg-[#fbbf24] rounded" />
                 <button onClick={() => applyFormatting('backColor', '#f472b6')} className="w-6 h-6 bg-[#f472b6] rounded" />
-                <button onClick={() => applyFormatting('backColor', 'transparent')} className="w-6 h-6 bg-transparent border-2 border-gray-300 rounded" />
+                <button
+                  onClick={() => applyFormatting('backColor', 'transparent')}
+                  className="w-6 h-6 bg-transparent border-2 border-gray-300 rounded"
+                />
               </div>
             )}
           </div>
@@ -438,9 +538,15 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             </button>
             {dropdown === 'textFormat' && (
               <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                <button onClick={() => applyFormatting('bold')} className="block px-4 py-2 hover:bg-gray-100">Bold</button>
-                <button onClick={() => applyFormatting('italic')} className="block px-4 py-2 hover:bg-gray-100">Italic</button>
-                <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">Underline</button>
+                <button onClick={() => applyFormatting('bold')} className="block px-4 py-2 hover:bg-gray-100">
+                  Bold
+                </button>
+                <button onClick={() => applyFormatting('italic')} className="block px-4 py-2 hover:bg-gray-100">
+                  Italic
+                </button>
+                <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">
+                  Underline
+                </button>
               </div>
             )}
           </div>
@@ -454,27 +560,28 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             className="w-full h-full focus:outline-none overflow-y-auto"
             placeholder="Start writing your note..."
           />
-          
+
           {showSuggestion && suggestion && suggestionPosition && (
-            <div 
+            <div
               ref={suggestionRef}
               className="suggestion-container"
               style={{
                 top: `${suggestionPosition.top}px`,
                 left: `${suggestionPosition.left}px`,
               }}
+              onMouseDown={(e) => e.stopPropagation()} // Prevent selection changes when clicking on suggestion box
             >
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
                 <div className="flex space-x-2">
-                  <button 
+                  <button
                     onClick={acceptSuggestion}
                     className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
                     title="Aceitar sugestão"
                   >
                     <Check className="w-4 h-4" />
                   </button>
-                  <button 
+                  <button
                     onClick={rejectSuggestion}
                     className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
                     title="Recusar sugestão"
@@ -483,18 +590,20 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                   </button>
                 </div>
               </div>
-              <div className="suggestion-text">
-                {suggestion}
-              </div>
+              <div className="suggestion-text">{suggestion}</div>
               <div className="shortcuts-hint">
-                <span><span className="shortcut-key">Tab</span> para aceitar</span>
-                <span><span className="shortcut-key">Esc</span> para recusar</span>
+                <span>
+                  <span className="shortcut-key">Tab</span> para aceitar
+                </span>
+                <span>
+                  <span className="shortcut-key">Esc</span> para recusar
+                </span>
               </div>
             </div>
           )}
         </div>
       </div>
-      
+
       {showGeminiChat && (
         <div className="w-1/3 border-l border-gray-200">
           <GeminiChat />
