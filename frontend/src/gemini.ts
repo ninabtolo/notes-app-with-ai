@@ -11,3 +11,19 @@ export async function generateText(prompt: string): Promise<string> {
   const text = response.text();
   return text;
 }
+
+export async function generateSuggestion(currentText: string): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const prompt = `
+    Como um assistente acadêmico, continue este texto de forma natural.
+    Forneça apenas a continuação direta (1-2 sentenças), sem introduções ou explicações.
+    Mantenha o mesmo tom, estilo e idioma do texto original.
+    Texto original: "${currentText.slice(-500)}"
+    Continuação:
+  `;
+  
+  const result = await model.generateContent(prompt);
+  const response = await result.response;
+  const suggestion = response.text();
+  return suggestion;
+}

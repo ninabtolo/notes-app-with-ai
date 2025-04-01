@@ -8,3 +8,24 @@
   text-decoration-color: inherit;
   -webkit-text-decoration-color: inherit;
 }
+
+.suggestion-container {
+  border-left: 3px solid #6c757d;
+  margin-top: 8px;
+  background-color: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+}
+
+.suggestion-text {
+  user-select: none;
+  pointer-events: none;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}

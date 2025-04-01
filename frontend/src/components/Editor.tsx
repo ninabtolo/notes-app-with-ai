@@ -1,10 +1,12 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
-import { Type, Palette, Download, Bold, Highlighter, MessageSquare } from 'lucide-react'; 
+import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb } from 'lucide-react'; 
 import html2pdf from 'html2pdf.js';
 import { ipcRenderer } from 'electron';
 import './Editor.css';
 import GeminiChat from './GeminiChat';
+import { generateSuggestion } from '../gemini';
+import debounce from 'lodash.debounce';
 
 interface EditorProps {
   note: Note | null;
@@ -17,6 +19,12 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [dropdown, setDropdown] = useState<string | null>(null);
   const [savedRange, setSavedRange] = useState<Range | null>(null);
   const [showGeminiChat, setShowGeminiChat] = useState<boolean>(false);
+  
+  const [suggestion, setSuggestion] = useState<string>('');
+  const [showSuggestion, setShowSuggestion] = useState<boolean>(false);
+  const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState<boolean>(false);
+  const [isSuggestionEnabled, setIsSuggestionEnabled] = useState<boolean>(false);
+  const lastCursorPosition = useRef<Range | null>(null);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -146,6 +154,68 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     });
   };
 
+  const requestSuggestion = useCallback(
+    debounce(async () => {
+      if (!isSuggestionEnabled || !editorRef.current || isGeneratingSuggestion) return;
+      
+      const textContent = editorRef.current.textContent || '';
+      
+      if (textContent.length < 30) {
+        setSuggestion('');
+        setShowSuggestion(false);
+        return;
+      }
+      
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
+      }
+      
+      setIsGeneratingSuggestion(true);
+      try {
+        const newSuggestion = await generateSuggestion(textContent);
+        if (newSuggestion && newSuggestion.trim()) {
+          setSuggestion(newSuggestion.trim());
+          setShowSuggestion(true);
+        }
+      } catch (error) {
+        console.error('Error generating suggestion:', error);
+      } finally {
+        setIsGeneratingSuggestion(false);
+      }
+    }, 1500),
+    [isGeneratingSuggestion, isSuggestionEnabled]
+  );
+
+  const acceptSuggestion = () => {
+    if (!editorRef.current || !suggestion) return;
+    
+    if (lastCursorPosition.current) {
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(lastCursorPosition.current);
+      }
+      
+      const span = document.createElement('span');
+      span.innerHTML = ` ${suggestion}`;
+      lastCursorPosition.current.insertNode(span);
+      
+      handleContentChange();
+    } else {
+      editorRef.current.innerHTML += ` ${suggestion}`;
+      handleContentChange();
+    }
+    
+    setSuggestion('');
+    setShowSuggestion(false);
+  };
+
+  const rejectSuggestion = () => {
+    setSuggestion('');
+    setShowSuggestion(false);
+  };
+
   const handleContentChange = () => {
     if (editorRef.current) {
       onUpdateNote({
@@ -153,6 +223,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         content: editorRef.current.innerHTML,
         updatedAt: new Date(),
       });
+      
+      if (isSuggestionEnabled) {
+        requestSuggestion();
+      }
     }
   };
 
@@ -182,6 +256,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     html2pdf().set(opt).from(content).save();
   };
 
+  const toggleSuggestions = () => {
+    setIsSuggestionEnabled(!isSuggestionEnabled);
+    if (isSuggestionEnabled) {
+      setSuggestion('');
+      setShowSuggestion(false);
+    }
+  };
+
   if (!note) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -202,6 +284,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             className="flex-1 text-4xl font-bold focus:outline-none"
           />
           <div className="flex items-center space-x-2">
+            <button 
+              onClick={toggleSuggestions}
+              className={`flex items-center space-x-1 px-3 py-2 text-white rounded transition ${isSuggestionEnabled ? 'bg-amber-500 hover:bg-amber-600' : 'bg-gray-500 hover:bg-gray-600'}`}
+              title={isSuggestionEnabled ? "Desativar sugestões" : "Ativar sugestões"}
+            >
+              <Lightbulb className="w-5 h-5" />
+              <span>Sugestões</span>
+            </button>
             <button 
               onClick={() => setShowGeminiChat(!showGeminiChat)}
               className="flex items-center space-x-1 px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
@@ -297,9 +387,36 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           ref={editorRef}
           contentEditable
           onInput={handleContentChange}
-          className="w-full h-[calc(100vh-250px)] focus:outline-none overflow-y-auto"
+          className="w-full h-[calc(100vh-320px)] focus:outline-none overflow-y-auto"
           placeholder="Start writing your note..."
         />
+        
+        {showSuggestion && suggestion && (
+          <div className="suggestion-container">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={acceptSuggestion}
+                  className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                  title="Aceitar sugestão"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={rejectSuggestion}
+                  className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
+                  title="Recusar sugestão"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="suggestion-text">
+              {suggestion}
+            </div>
+          </div>
+        )}
       </div>
       
       {showGeminiChat && (
