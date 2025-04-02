@@ -379,7 +379,7 @@ function requireTrace() {
 var sqlite3Exports = sqlite3$1.exports;
 const sqlite3 = /* @__PURE__ */ getDefaultExportFromCjs(sqlite3Exports);
 const __filename$1 = fileURLToPath(import.meta.url);
-dirname(__filename$1);
+const __dirname = dirname(__filename$1);
 const dbPath = join(app.getPath("userData"), "notesapp.db");
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -402,7 +402,8 @@ app.whenReady().then(() => {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false
-    }
+    },
+    icon: require$$0.join(__dirname, "assets", "notes7.ico")
   });
   mainWindow.loadURL("http://localhost:5173");
   ipcMain.handle("load-notes", async () => {

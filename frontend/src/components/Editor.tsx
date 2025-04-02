@@ -514,7 +514,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
               <button
                 ref={settingsButtonRef}
                 onClick={toggleSettingsDropdown}
-                className="flex items-center justify-center p-2 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition"
+                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
                 title="Settings"
               >
                 <Settings className="w-5 h-5" />
@@ -552,7 +552,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             </div>
             <button
               onClick={toggleChat}
-              className="flex items-center justify-center p-2 bg-gray-200 text-gray-700 rounded-full hover:bg-gray-300 transition"
+              className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
               title={showGeminiChat ? "Close AI" : "Open AI"}
             >
               <MessageSquare className="w-5 h-5" />
@@ -564,7 +564,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           <div className="relative">
             <button
               onClick={() => toggleDropdown('fontSize')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-indigo-100 rounded"
+              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
             >
               <Type className="w-4 h-4" />
               <span>Font Size</span>
@@ -590,7 +590,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           <div className="relative">
             <button
               onClick={() => toggleDropdown('foreColor')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-indigo-100 rounded"
+              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
             >
               <Palette className="w-4 h-4" />
               <span>Text Color</span>
@@ -609,7 +609,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           <div className="relative">
             <button
               onClick={() => toggleDropdown('backColor')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-indigo-100 rounded"
+              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
             >
               <Highlighter className="w-4 h-4" />
               <span>Highlight</span>
@@ -630,7 +630,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           <div className="relative">
             <button
               onClick={() => toggleDropdown('textFormat')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-indigo-100 rounded"
+              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
             >
               <Bold className="w-4 h-4" />
               <span>Format</span>

@@ -33,8 +33,8 @@ function GeminiChat({ onClose }: GeminiChatProps) {
       const aiMessage = { role: 'assistant', content: text };
       setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
-      console.error('Erro ao gerar texto:', error);
-      const errorMessage = { role: 'assistant', content: 'Erro ao gerar texto.' };
+      console.error('Error generating text:', error);
+      const errorMessage = { role: 'assistant', content: 'Error generating text.' };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setLoading(false);
@@ -49,24 +49,23 @@ function GeminiChat({ onClose }: GeminiChatProps) {
 
   return (
     <div className="flex flex-col h-full bg-white shadow-lg rounded-l-lg relative">
-      {/* Repositioned close button to absolute top-right */}
       <button 
         onClick={onClose}
         className="absolute top-2 right-2 p-1.5 rounded-full hover:bg-purple-100 bg-white text-purple-700 transition-colors z-20 shadow-sm"
-        aria-label="Fechar chat"
+        aria-label="Close chat"
       >
         <X size={18} />
       </button>
       
       <div className="p-4 pt-8 bg-purple-50 border-b rounded-tl-lg">
-        <h2 className="text-lg font-medium text-purple-800">Chat com IA</h2>
-        <p className="text-sm text-gray-600">Faça perguntas ou peça ajuda com suas notas</p>
+        <h2 className="text-lg font-medium text-purple-800">AI Chat</h2>
+        <p className="text-sm text-gray-600">Ask questions or get help with your notes</p>
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-white">
         {messages.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
-            Envie uma mensagem para começar a conversa
+            Send a message to start the conversation
           </div>
         ) : (
           messages.map((msg, idx) => (
@@ -90,7 +89,7 @@ function GeminiChat({ onClose }: GeminiChatProps) {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Digite sua pergunta... (Ctrl+Enter para enviar)"
+          placeholder="Type your question... (Ctrl+Enter to send)"
           className="w-full p-2 border rounded resize-none"
           rows={3}
         />
@@ -99,7 +98,7 @@ function GeminiChat({ onClose }: GeminiChatProps) {
           className="mt-2 w-full p-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
           disabled={loading || !prompt.trim()}
         >
-          {loading ? 'Carregando...' : 'Enviar'}
+          {loading ? 'Loading...' : 'Send'}
         </button>
       </div>
     </div>

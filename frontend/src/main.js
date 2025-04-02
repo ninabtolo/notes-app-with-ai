@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { join } from 'path';
+import path, { join } from 'path';
 import sqlite3 from 'sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -34,6 +34,7 @@ app.whenReady().then(() => {
       nodeIntegration: true,
       contextIsolation: false,
     },
+    icon: path.join(__dirname, 'assets', 'notes7.ico'), 
   });
 
   mainWindow.loadURL('http://localhost:5173'); 
