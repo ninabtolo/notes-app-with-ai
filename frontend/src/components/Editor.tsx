@@ -27,7 +27,6 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [suggestionPosition, setSuggestionPosition] = useState<{ top: number; left: number } | null>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const [recentlyAcceptedSuggestion, setRecentlyAcceptedSuggestion] = useState<boolean>(false);
-  const [chatVisible, setChatVisible] = useState<boolean>(false);
   const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
@@ -39,6 +38,8 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [isDragging, setIsDragging] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const dragStartYRef = useRef<number>(0);
+  const [chatClosing, setChatClosing] = useState<boolean>(false);
+  const [chatEntering, setChatEntering] = useState<boolean>(false);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -244,6 +245,146 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
+  const calculateCursorPosition = () => {
+    if (!editorRef.current) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const editorRect = editorRef.current.getBoundingClientRect();
+
+    const top = rect.bottom - editorRect.top;
+    const left = rect.left - editorRect.left;
+
+    const maxWidth = 500;
+    const rightEdge = left + maxWidth;
+    const editorWidth = editorRect.width;
+
+    const adjustedLeft = rightEdge > editorWidth ? editorWidth - maxWidth : left;
+
+    setSuggestionPosition({ top, left: Math.max(0, adjustedLeft) });
+  };
+
+  const getTextContextAroundCursor = () => {
+    if (!editorRef.current) return { textBefore: '', textAfter: '' };
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return { textBefore: '', textAfter: '' };
+
+    const range = selection.getRangeAt(0).cloneRange();
+
+    const beforeRange = document.createRange();
+    beforeRange.setStart(editorRef.current, 0);
+    beforeRange.setEnd(range.startContainer, range.startOffset);
+
+    const tempBeforeDiv = document.createElement('div');
+    tempBeforeDiv.appendChild(beforeRange.cloneContents());
+    const textBefore = tempBeforeDiv.textContent || '';
+
+    const afterRange = document.createRange();
+    afterRange.setStart(range.startContainer, range.startOffset);
+    afterRange.selectNodeContents(editorRef.current);
+
+    const tempAfterDiv = document.createElement('div');
+    tempAfterDiv.appendChild(afterRange.cloneContents());
+    const textAfter = tempAfterDiv.textContent || '';
+
+    return { textBefore, textAfter };
+  };
+
+  const requestSuggestion = useCallback(
+    debounce(async () => {
+      if (!isSuggestionEnabled || !editorRef.current || isGeneratingSuggestion) return;
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
+      calculateCursorPosition();
+
+      const { textBefore, textAfter } = getTextContextAroundCursor();
+
+      if (textBefore.length < 20) {
+        setSuggestion('');
+        setShowSuggestion(false);
+        return;
+      }
+
+      setIsGeneratingSuggestion(true);
+      try {
+        const newSuggestion = await generateSuggestion(textBefore, textAfter, recentlyAcceptedSuggestion);
+        if (newSuggestion && newSuggestion.trim()) {
+          setSuggestion(newSuggestion.trim());
+          setShowSuggestion(true);
+
+          if (recentlyAcceptedSuggestion) {
+            setRecentlyAcceptedSuggestion(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error generating suggestion:', error);
+      } finally {
+        setIsGeneratingSuggestion(false);
+      }
+    }, 1500),
+    [isGeneratingSuggestion, isSuggestionEnabled, recentlyAcceptedSuggestion]
+  );
+
+  const acceptSuggestion = () => {
+    if (!editorRef.current || !suggestion) return;
+
+    if (lastCursorPosition.current) {
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(lastCursorPosition.current);
+      }
+
+      const span = document.createElement('span');
+      span.innerHTML = ` ${suggestion}`;
+
+      lastCursorPosition.current.insertNode(span);
+
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      range.collapse(false);
+
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      lastCursorPosition.current = range.cloneRange();
+
+      setRecentlyAcceptedSuggestion(true);
+
+      handleContentChange();
+    } else {
+      editorRef.current.innerHTML += ` ${suggestion}`;
+
+      const range = document.createRange();
+      const selection = window.getSelection();
+
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+
+      setRecentlyAcceptedSuggestion(true);
+
+      handleContentChange();
+    }
+
+    setSuggestion('');
+    setShowSuggestion(false);
+  };
+
+  const rejectSuggestion = () => {
+    setSuggestion('');
+    setShowSuggestion(false);
+  };
+
   const handleContentChange = () => {
     if (editorRef.current) {
       onUpdateNote({
@@ -251,6 +392,16 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         content: editorRef.current.innerHTML,
         updatedAt: new Date().toISOString(),
       });
+
+      if (isSuggestionEnabled) {
+        if (recentlyAcceptedSuggestion) {
+          setTimeout(() => {
+            requestSuggestion();
+          }, 800);
+        } else {
+          requestSuggestion();
+        }
+      }
     }
   };
 
@@ -289,8 +440,29 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   };
 
   const toggleChat = () => {
-    setShowGeminiChat(!showGeminiChat);
+    console.log("Toggle chat clicked, current state:", !showGeminiChat);
+    if (showGeminiChat) {
+      setChatClosing(true);
+      setChatEntering(false);
+      setTimeout(() => {
+        setShowGeminiChat(false);
+        setChatClosing(false);
+      }, 300);
+    } else {
+      setShowGeminiChat(true);
+      setTimeout(() => {
+        setChatEntering(true);
+      }, 10);
+    }
   };
+
+  useEffect(() => {
+    if (showGeminiChat) {
+      setTimeout(() => {
+        setChatEntering(true);
+      }, 10);
+    }
+  }, [showGeminiChat]);
 
   const toggleSettingsDropdown = () => {
     setShowSettingsDropdown(!showSettingsDropdown);
@@ -314,6 +486,70 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!showSuggestion || !suggestion) return;
+
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault();
+        acceptSuggestion();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        rejectSuggestion();
+      }
+    };
+
+    if (editorRef.current) {
+      editorRef.current.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('keydown', handleKeyDown);
+      }
+    };
+  }, [showSuggestion, suggestion]);
+
+  useEffect(() => {
+    const handleSelectionChange = (e: Event) => {
+      if (!showSuggestion || !suggestion) return;
+      
+      if (suggestionRef.current && e instanceof MouseEvent) {
+        const clickedElement = e.target as Node;
+        if (suggestionRef.current.contains(clickedElement)) {
+          return;
+        }
+      }
+
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.startContainer;
+
+        if (editorRef.current && editorRef.current.contains(container)) {
+          calculateCursorPosition();
+        }
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    
+    const handleSuggestionClick = (e: MouseEvent) => {
+      e.stopPropagation(); 
+    };
+    
+    if (suggestionRef.current) {
+      suggestionRef.current.addEventListener('mousedown', handleSuggestionClick);
+    }
+
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (suggestionRef.current) {
+        suggestionRef.current.removeEventListener('mousedown', handleSuggestionClick);
+      }
+    };
+  }, [showSuggestion, suggestion]);
+
   if (!note) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -329,30 +565,11 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           {note.coverImage && (
             <div className="mb-4 relative">
               {isAdjustingCover ? (
-                <div className="cover-adjusting-container" style={{ 
-                  height: "192px", 
-                  background: "#000", 
-                  overflow: "hidden", 
-                  position: "relative", 
-                  borderRadius: "0.5rem",
-                  cursor: "ns-resize"
-                }}>
-                  <div className="cover-crop-controls" style={{ position: "absolute", top: "10px", right: "10px", zIndex: 1000, display: "flex", gap: "10px" }}>
+                <div className="cover-adjusting-container">
+                  <div className="cover-crop-controls">
                     <button 
                       onClick={saveAdjustedCover}
                       className="save-crop-btn"
-                      style={{
-                        padding: "8px",
-                        background: "white",
-                        color: "#374151",
-                        borderRadius: "9999px",
-                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}
                       title="Save adjustment"
                     >
                       <Save className="w-5 h-5" />
@@ -360,64 +577,24 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                     <button 
                       onClick={cancelAdjustingCover}
                       className="cancel-crop-btn"
-                      style={{
-                        padding: "8px",
-                        background: "white",
-                        color: "#374151",
-                        borderRadius: "9999px",
-                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
-                        border: "none",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center"
-                      }}
                       title="Cancel"
                     >
                       <XCircle className="w-5 h-5" />
                     </button>
                   </div>
                   
-                  <div style={{ 
-                    position: "absolute", 
-                    bottom: "10px", 
-                    left: "50%", 
-                    transform: "translateX(-50%)", 
-                    backgroundColor: "rgba(0,0,0,0.5)", 
-                    borderRadius: "4px", 
-                    padding: "4px 8px",
-                    zIndex: 100,
-                    color: "white",
-                    fontSize: "12px",
-                    pointerEvents: "none"
-                  }}>
+                  <div className="drag-instructions">
                     Drag image up or down to adjust position
                   </div>
                   
-                  <div 
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      zIndex: 30,
-                      cursor: "ns-resize"
-                    }}
-                    onMouseDown={handleMouseDown}
-                  />
+                  <div className="drag-overlay" onMouseDown={handleMouseDown} />
                   
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 20 }}>
+                  <div className="image-container">
                     <img
                       ref={imageRef}
                       src={imageToCrop}
-                      style={{ 
-                        transform: `translateY(${imageOffsetY}px)`,
-                        width: '100%',
-                        maxWidth: '100%',
-                        height: 'auto',
-                        objectFit: 'cover',
-                      }}
+                      style={{ transform: `translateY(${imageOffsetY}px)` }}
+                      className="w-full max-w-full h-auto object-cover"
                       alt="Adjusting cover"
                       draggable="false"
                     />
@@ -606,44 +783,64 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
               className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
               placeholder="Start writing your note..."
             />
+
+            {showSuggestion && suggestion && suggestionPosition && (
+              <div
+                ref={suggestionRef}
+                className="suggestion-container"
+                style={{
+                  top: `${suggestionPosition.top}px`,
+                  left: `${suggestionPosition.left}px`,
+                }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={acceptSuggestion}
+                      className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                      title="Aceitar sugestão"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={rejectSuggestion}
+                      className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
+                      title="Recusar sugestão"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="suggestion-text">{suggestion}</div>
+                <div className="shortcuts-hint">
+                  <span>
+                    <span className="shortcut-key">Tab</span> para aceitar
+                  </span>
+                  <span>
+                    <span className="shortcut-key">Esc</span> para recusar
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {chatVisible && (
-          <div className="chat-container chat-container-enter">
-            <GeminiChat onClose={() => setShowGeminiChat(false)} />
+        {showGeminiChat && (
+          <div className={`chat-container ${chatEntering ? 'entering' : ''} ${chatClosing ? 'closing' : ''}`}>
+            <GeminiChat onClose={() => {
+              console.log("Closing chat");
+              setChatClosing(true);
+              setChatEntering(false);
+              setTimeout(() => {
+                setShowGeminiChat(false);
+                setChatClosing(false);
+              }, 300);
+            }} />
           </div>
         )}
       </div>
     </div>
   );
 }
-
-const style = document.createElement('style');
-style.innerHTML = `
-  label:focus, label:focus-visible, button:focus {
-    outline: none !important;
-    border: none !important;
-    box-shadow: none !important;
-  }
-`;
-document.head.appendChild(style);
-
-const styleForCss = document.createElement('style');
-styleForCss.innerHTML = `
-  .editor-main-container {
-    height: 100vh;
-    overflow-y: auto;
-    position: relative;
-  }
-  
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-`;
-document.head.appendChild(styleForCss);
