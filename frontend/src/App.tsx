@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Note } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
@@ -28,6 +28,20 @@ function App() {
     ipcRenderer.send('save-notes', notes);
   }, [notes]);
 
+  useEffect(() => {
+    ipcRenderer.on('note-deleted', (_, deletedId) => {
+      setNotes(prevNotes => prevNotes.filter(note => note.id !== deletedId));
+      
+      if (activeNoteId === deletedId) {
+        setActiveNoteId(null);
+      }
+    });
+
+    return () => {
+      ipcRenderer.removeAllListeners('note-deleted');
+    };
+  }, [activeNoteId]);
+
   const handleWelcomeComplete = () => {
     setShowWelcome(false);
     localStorage.setItem('hasSeenWelcome', 'true');
@@ -53,12 +67,18 @@ function App() {
     ));
   };
 
-  const handleDeleteNote = (id: string) => {
-    setNotes(notes.filter((note) => note.id !== id));
+  const deleteNote = useCallback((id: string) => {
     ipcRenderer.send('delete-note', id);
+    
+    setNotes(prevNotes => prevNotes.filter(note => note.id !== id));
+    
     if (activeNoteId === id) {
-      setActiveNoteId(notes[0]?.id || null);
+      setActiveNoteId(null);
     }
+  }, [activeNoteId]);
+
+  const handleDeleteNote = (id: string) => {
+    deleteNote(id);
   };
 
   return (

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
-import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings } from 'lucide-react'; 
+import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings, Image, Save, XCircle } from 'lucide-react'; 
 import html2pdf from 'html2pdf.js';
 import { ipcRenderer } from 'electron';
 import './Editor.css';
@@ -31,6 +31,14 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
+  const [isCropping, setIsCropping] = useState(false);
+  const [imageToCrop, setImageToCrop] = useState<string | null>(null);
+  const [isAdjustingCover, setIsAdjustingCover] = useState(false);
+  const [dragStartY, setDragStartY] = useState(0);
+  const [imageOffsetY, setImageOffsetY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const dragStartYRef = useRef<number>(0);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -56,78 +64,9 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   const applyFormatting = (command: string, value?: string) => {
     restoreSelection();
-    if (command === 'backColor') {
-      if (value === 'transparent') {
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          const isBold = document.queryCommandState('bold');
-          const isItalic = document.queryCommandState('italic');
-          const isUnderlined = document.queryCommandState('underline');
-          const fontSize = document.queryCommandValue('fontSize');
-          const textColor = document.queryCommandValue('foreColor');
-
-          document.execCommand('removeFormat', false);
-
-          if (isBold) document.execCommand('bold', false);
-          if (isItalic) document.execCommand('italic', false);
-          if (isUnderlined) document.execCommand('underline', false);
-          if (fontSize) document.execCommand('fontSize', false, fontSize);
-          if (textColor) document.execCommand('foreColor', false, textColor);
-
-          handleContentChange();
-          setDropdown(null);
-          return;
-        }
-      } else {
-        const selection = window.getSelection();
-        if (selection && selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          const fragment = range.cloneContents();
-
-          const tempDiv = document.createElement('div');
-          tempDiv.appendChild(fragment);
-
-          const textNodes = getAllTextNodes(tempDiv);
-          if (textNodes.length > 0) {
-            textNodes.forEach((node) => {
-              const span = document.createElement('span');
-              span.style.backgroundColor = value || '';
-
-              if (node.parentNode) {
-                const text = node.textContent;
-                span.textContent = text;
-                node.parentNode.replaceChild(span, node);
-              }
-            });
-
-            range.deleteContents();
-            range.insertNode(tempDiv);
-            handleContentChange();
-            setDropdown(null);
-            return;
-          }
-        }
-      }
-    }
-
     document.execCommand(command, false, value);
     handleContentChange();
     setDropdown(null);
-  };
-
-  const getAllTextNodes = (element: Node): Text[] => {
-    const textNodes: Text[] = [];
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      if (node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) {
-        textNodes.push(node as Text);
-      }
-    }
-
-    return textNodes;
   };
 
   useEffect(() => {
@@ -156,191 +95,162 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     onUpdateNote({
       ...note,
       title: e.target.value,
-      updatedAt: new Date(),
+      updatedAt: new Date().toISOString(),
     });
   };
 
-  const calculateCursorPosition = () => {
-    if (!editorRef.current) return;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-    const editorRect = editorRef.current.getBoundingClientRect();
-    const scrollTop = editorRef.current.scrollTop;
-
-    const estimatedSuggestionHeight = 120; 
-    const estimatedSuggestionWidth = 300;
-
-    let top = rect.bottom - editorRect.top + scrollTop;
-    let left = rect.left - editorRect.left;
-
-    const visibleEditorHeight = editorRect.height;
-    const visibleEditorWidth = editorRect.width;
-    
-    if (top + estimatedSuggestionHeight > scrollTop + visibleEditorHeight) {
-      top = rect.top - editorRect.top - estimatedSuggestionHeight + scrollTop;
+  const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageToCrop(reader.result as string);
+        onUpdateNote({
+          ...note,
+          coverImage: reader.result as string,
+          updatedAt: new Date().toISOString(),
+        });
+        setTimeout(() => {
+          setIsAdjustingCover(true);
+        }, 100);
+      };
+      reader.readAsDataURL(e.target.files[0]);
     }
-    
-    if (top < scrollTop) {
-      top = scrollTop + 5;
-    }
-    
-    if (top + estimatedSuggestionHeight > scrollTop + visibleEditorHeight) {
-      top = (scrollTop + visibleEditorHeight) - estimatedSuggestionHeight - 5;
-    }
-    
-    if (left + estimatedSuggestionWidth > visibleEditorWidth) {
-      left = visibleEditorWidth - estimatedSuggestionWidth - 5;
-    }
-    
-    if (left < 0) {
-      left = 5;
-    }
-
-    top = Math.max(scrollTop + 5, Math.min(scrollTop + visibleEditorHeight - estimatedSuggestionHeight - 5, top));
-    left = Math.max(5, Math.min(visibleEditorWidth - estimatedSuggestionWidth - 5, left));
-
-    setSuggestionPosition({ top, left });
   };
 
-  const requestSuggestion = useCallback(
-    debounce(async () => {
-      if (!isSuggestionEnabled || !editorRef.current || isGeneratingSuggestion) return;
+  const saveAdjustedCover = () => {
+    if (!imageToCrop || !imageRef.current) {
+      setIsAdjustingCover(false);
+      return;
+    }
 
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
+    try {
+      const img = new window.Image();
+      img.crossOrigin = "anonymous";
 
-      lastCursorPosition.current = selection.getRangeAt(0).cloneRange();
-      calculateCursorPosition();
+      img.onload = () => {
+        try {
+          const containerHeight = 192;
+          const imageHeight = imageRef.current.clientHeight;
+          const scaleY = img.naturalHeight / imageHeight;
 
-      const { textBefore, textAfter } = getTextContextAroundCursor();
+          const sourceY = Math.max(0, -imageOffsetY * scaleY);
+          const maxSourceY = img.naturalHeight - containerHeight * scaleY;
+          const adjustedSourceY = Math.min(sourceY, maxSourceY);
 
-      if (textBefore.length < 20) {
-        setSuggestion('');
-        setShowSuggestion(false);
-        return;
-      }
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = containerHeight * scaleY;
 
-      setIsGeneratingSuggestion(true);
-      try {
-        const newSuggestion = await generateSuggestion(textBefore, textAfter, recentlyAcceptedSuggestion);
-        if (newSuggestion && newSuggestion.trim()) {
-          setSuggestion(newSuggestion.trim());
-          setShowSuggestion(true);
-
-          if (recentlyAcceptedSuggestion) {
-            setRecentlyAcceptedSuggestion(false);
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            setIsAdjustingCover(false);
+            return;
           }
+
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.drawImage(
+            img,
+            0,
+            adjustedSourceY,
+            img.naturalWidth,
+            containerHeight * scaleY,
+            0,
+            0,
+            canvas.width,
+            canvas.height
+          );
+
+          const croppedImage = canvas.toDataURL('image/jpeg', 0.9);
+
+          const updatedNote = {
+            ...note,
+            coverImage: croppedImage,
+            updatedAt: new Date().toISOString(),
+          };
+
+          ipcRenderer.invoke('save-note-sync', updatedNote)
+            .then(() => console.log("Note saved to database successfully"))
+            .catch(err => console.error("Error saving note:", err));
+
+          onUpdateNote(updatedNote);
+
+          setIsAdjustingCover(false);
+          setImageToCrop(null);
+        } catch (err) {
+          setIsAdjustingCover(false);
         }
-      } catch (error) {
-        console.error('Error generating suggestion:', error);
-      } finally {
-        setIsGeneratingSuggestion(false);
-      }
-    }, 1500),
-    [isGeneratingSuggestion, isSuggestionEnabled, recentlyAcceptedSuggestion]
-  );
+      };
 
-  const getTextContextAroundCursor = () => {
-    if (!editorRef.current) return { textBefore: '', textAfter: '' };
+      img.onerror = () => {
+        setIsAdjustingCover(false);
+      };
 
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return { textBefore: '', textAfter: '' };
-
-    const range = selection.getRangeAt(0).cloneRange();
-
-    const beforeRange = document.createRange();
-    beforeRange.setStart(editorRef.current, 0);
-    beforeRange.setEnd(range.startContainer, range.startOffset);
-
-    const tempBeforeDiv = document.createElement('div');
-    tempBeforeDiv.appendChild(beforeRange.cloneContents());
-    const textBefore = tempBeforeDiv.textContent || '';
-
-    const afterRange = document.createRange();
-    afterRange.setStart(range.startContainer, range.startOffset);
-    afterRange.selectNodeContents(editorRef.current);
-
-    const tempAfterDiv = document.createElement('div');
-    tempAfterDiv.appendChild(afterRange.cloneContents());
-    const textAfter = tempAfterDiv.textContent || '';
-
-    return { textBefore, textAfter };
+      img.src = imageToCrop;
+    } catch (err) {
+      setIsAdjustingCover(false);
+    }
   };
 
-  const acceptSuggestion = () => {
-    if (!editorRef.current || !suggestion) return;
+  const cancelAdjustingCover = () => {
+    setIsAdjustingCover(false);
+    setImageToCrop(null);
+  };
 
-    if (lastCursorPosition.current) {
-      const selection = window.getSelection();
-      if (selection) {
-        selection.removeAllRanges();
-        selection.addRange(lastCursorPosition.current);
-      }
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    dragStartYRef.current = e.clientY;
+    setDragStartY(e.clientY);
+    setIsDragging(true);
+  };
 
-      const span = document.createElement('span');
-      span.innerHTML = ` ${suggestion}`;
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging || !imageRef.current) return;
+    
+    const deltaY = e.clientY - dragStartYRef.current;
+    dragStartYRef.current = e.clientY;
+    
+    const imageHeight = imageRef.current.clientHeight;
+    const containerHeight = 192;
+    const maxOffset = Math.max(0, imageHeight - containerHeight);
+    
+    setImageOffsetY((prev) => {
+      const newOffset = Math.min(0, Math.max(-maxOffset, prev + deltaY));
+      return newOffset;
+    });
+  }, [isDragging]);
 
-      lastCursorPosition.current.insertNode(span);
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+    }
+  }, [isDragging]);
 
-      const range = document.createRange();
-      range.selectNodeContents(span);
-      range.collapse(false);
-
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-
-      lastCursorPosition.current = range.cloneRange();
-
-      setRecentlyAcceptedSuggestion(true);
-
-      handleContentChange();
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
     } else {
-      editorRef.current.innerHTML += ` ${suggestion}`;
-
-      const range = document.createRange();
-      const selection = window.getSelection();
-
-      range.selectNodeContents(editorRef.current);
-      range.collapse(false);
-
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-
-      setRecentlyAcceptedSuggestion(true);
-
-      handleContentChange();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
     }
 
-    setSuggestion('');
-    setShowSuggestion(false);
-  };
-
-  const rejectSuggestion = () => {
-    setSuggestion('');
-    setShowSuggestion(false);
-  };
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   const handleContentChange = () => {
     if (editorRef.current) {
       onUpdateNote({
         ...note,
         content: editorRef.current.innerHTML,
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
       });
-
-      if (isSuggestionEnabled) {
-        if (recentlyAcceptedSuggestion) {
-          setTimeout(() => {
-            requestSuggestion();
-          }, 800);
-        } else {
-          requestSuggestion();
-        }
-      }
     }
   };
 
@@ -387,70 +297,6 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   };
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!showSuggestion || !suggestion) return;
-
-      if (e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
-        acceptSuggestion();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        rejectSuggestion();
-      }
-    };
-
-    if (editorRef.current) {
-      editorRef.current.addEventListener('keydown', handleKeyDown);
-    }
-
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.removeEventListener('keydown', handleKeyDown);
-      }
-    };
-  }, [showSuggestion, suggestion]);
-
-  useEffect(() => {
-    const handleSelectionChange = (e: Event) => {
-      if (!showSuggestion || !suggestion) return;
-      
-      if (suggestionRef.current && e instanceof MouseEvent) {
-        const clickedElement = e.target as Node;
-        if (suggestionRef.current.contains(clickedElement)) {
-          return;
-        }
-      }
-
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const container = range.startContainer;
-
-        if (editorRef.current && editorRef.current.contains(container)) {
-          calculateCursorPosition();
-        }
-      }
-    };
-
-    document.addEventListener('selectionchange', handleSelectionChange);
-    
-    const handleSuggestionClick = (e: MouseEvent) => {
-      e.stopPropagation(); 
-    };
-    
-    if (suggestionRef.current) {
-      suggestionRef.current.addEventListener('mousedown', handleSuggestionClick);
-    }
-
-    return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-      if (suggestionRef.current) {
-        suggestionRef.current.removeEventListener('mousedown', handleSuggestionClick);
-      }
-    };
-  }, [showSuggestion, suggestion]);
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
         settingsButtonRef.current && 
@@ -468,28 +314,6 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (showGeminiChat) {
-      setChatVisible(true);
-      setTimeout(() => {
-        const chatContainer = document.querySelector('.chat-container');
-        if (chatContainer) {
-          chatContainer.classList.remove('chat-container-enter');
-          chatContainer.classList.add('chat-container-visible');
-        }
-      }, 10);
-    } else {
-      const chatContainer = document.querySelector('.chat-container');
-      if (chatContainer) {
-        chatContainer.classList.remove('chat-container-visible');
-        chatContainer.classList.add('chat-container-enter');
-      }
-      setTimeout(() => {
-        setChatVisible(false);
-      }, 300);
-    }
-  }, [showGeminiChat]);
-
   if (!note) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-500">
@@ -500,214 +324,326 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   return (
     <div className="flex-1 flex relative">
-      <div className="flex-1 p-6 space-y-4 editor-main-container">
-        <div className="flex items-center justify-between">
-          <input
-            type="text"
-            value={note?.title || ''}
-            onChange={handleTitleChange}
-            placeholder="Note title"
-            className="flex-1 text-4xl font-bold focus:outline-none leading-relaxed"
-          />
-          <div className="flex items-center space-x-2 editor-buttons">
+      <div className="flex-1 flex flex-col h-full">
+        <div className="flex-1 p-6 space-y-4 editor-main-container no-scrollbar">
+          {note.coverImage && (
+            <div className="mb-4 relative">
+              {isAdjustingCover ? (
+                <div className="cover-adjusting-container" style={{ 
+                  height: "192px", 
+                  background: "#000", 
+                  overflow: "hidden", 
+                  position: "relative", 
+                  borderRadius: "0.5rem",
+                  cursor: "ns-resize"
+                }}>
+                  <div className="cover-crop-controls" style={{ position: "absolute", top: "10px", right: "10px", zIndex: 1000, display: "flex", gap: "10px" }}>
+                    <button 
+                      onClick={saveAdjustedCover}
+                      className="save-crop-btn"
+                      style={{
+                        padding: "8px",
+                        background: "white",
+                        color: "#374151",
+                        borderRadius: "9999px",
+                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                      title="Save adjustment"
+                    >
+                      <Save className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={cancelAdjustingCover}
+                      className="cancel-crop-btn"
+                      style={{
+                        padding: "8px",
+                        background: "white",
+                        color: "#374151",
+                        borderRadius: "9999px",
+                        boxShadow: "0 2px 4px rgba(0, 0, 0, 0.2)",
+                        border: "none",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                      title="Cancel"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+                  
+                  <div style={{ 
+                    position: "absolute", 
+                    bottom: "10px", 
+                    left: "50%", 
+                    transform: "translateX(-50%)", 
+                    backgroundColor: "rgba(0,0,0,0.5)", 
+                    borderRadius: "4px", 
+                    padding: "4px 8px",
+                    zIndex: 100,
+                    color: "white",
+                    fontSize: "12px",
+                    pointerEvents: "none"
+                  }}>
+                    Drag image up or down to adjust position
+                  </div>
+                  
+                  <div 
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      zIndex: 30,
+                      cursor: "ns-resize"
+                    }}
+                    onMouseDown={handleMouseDown}
+                  />
+                  
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 20 }}>
+                    <img
+                      ref={imageRef}
+                      src={imageToCrop}
+                      style={{ 
+                        transform: `translateY(${imageOffsetY}px)`,
+                        width: '100%',
+                        maxWidth: '100%',
+                        height: 'auto',
+                        objectFit: 'cover',
+                      }}
+                      alt="Adjusting cover"
+                      draggable="false"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <img
+                  src={note.coverImage}
+                  alt="Cover"
+                  className="w-full h-48 object-cover rounded-lg"
+                />
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <input
+              type="text"
+              value={note?.title || ''}
+              onChange={handleTitleChange}
+              placeholder="Note title"
+              className="flex-1 text-4xl font-bold focus:outline-none leading-relaxed"
+            />
+            <div className="flex items-center space-x-2 editor-buttons">
+              <div className="relative">
+                <button
+                  ref={settingsButtonRef}
+                  onClick={toggleSettingsDropdown}
+                  className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
+                  title="Settings"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+                {showSettingsDropdown && (
+                  <div 
+                    ref={settingsDropdownRef}
+                    className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded p-2 z-20 w-48"
+                  >
+                    <button 
+                      onClick={() => {
+                        toggleSuggestions();
+                        setShowSettingsDropdown(false);
+                      }} 
+                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-100 rounded"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <Lightbulb className="w-4 h-4" />
+                        <span>AI suggestions</span>
+                      </div>
+                      {isSuggestionEnabled && <Check className="w-4 h-4 ml-2 text-black" />}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        exportToPDF();
+                        setShowSettingsDropdown(false);
+                      }} 
+                      className="w-full flex items-center space-x-2 px-4 py-2 hover:bg-gray-100 rounded"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Export PDF</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={toggleChat}
+                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
+                title={showGeminiChat ? "Close AI" : "Open AI"}
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleCoverImageChange}
+                className="hidden"
+                id="cover-image-upload"
+              />
+              <button
+                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
+                title="Upload Cover Image"
+              >
+                <label htmlFor="cover-image-upload" className="cursor-pointer focus:outline-none">
+                  <Image className="w-5 h-5" />
+                </label>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 py-2 border-b">
             <div className="relative">
               <button
-                ref={settingsButtonRef}
-                onClick={toggleSettingsDropdown}
-                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
-                title="Settings"
+                onClick={() => toggleDropdown('fontSize')}
+                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
               >
-                <Settings className="w-5 h-5" />
+                <Type className="w-4 h-4" />
+                <span>Font Size</span>
               </button>
-              {showSettingsDropdown && (
-                <div 
-                  ref={settingsDropdownRef}
-                  className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded p-2 z-20 w-48"
-                >
-                  <button 
-                    onClick={() => {
-                      toggleSuggestions();
-                      setShowSettingsDropdown(false);
-                    }} 
-                    className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-100 rounded"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <Lightbulb className="w-4 h-4" />
-                      <span>AI suggestions</span>
-                    </div>
-                    {isSuggestionEnabled && <Check className="w-4 h-4 ml-2 text-black" />}
+              {dropdown === 'fontSize' && (
+                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
+                  <button onClick={() => applyFormatting('fontSize', '2')} className="block px-4 py-2 hover:bg-gray-100">
+                    Small
                   </button>
-                  <button 
-                    onClick={() => {
-                      exportToPDF();
-                      setShowSettingsDropdown(false);
-                    }} 
-                    className="w-full flex items-center space-x-2 px-4 py-2 hover:bg-gray-100 rounded"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Export PDF</span>
+                  <button onClick={() => applyFormatting('fontSize', '3')} className="block px-4 py-2 hover:bg-gray-100">
+                    Normal
+                  </button>
+                  <button onClick={() => applyFormatting('fontSize', '4')} className="block px-4 py-2 hover:bg-gray-100">
+                    Large
+                  </button>
+                  <button onClick={() => applyFormatting('fontSize', '5')} className="block px-4 py-2 hover:bg-gray-100">
+                    Extra L
                   </button>
                 </div>
               )}
             </div>
-            <button
-              onClick={toggleChat}
-              className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
-              title={showGeminiChat ? "Close AI" : "Open AI"}
-            >
-              <MessageSquare className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
 
-        <div className="flex items-center space-x-2 py-2 border-b">
-          <div className="relative">
-            <button
-              onClick={() => toggleDropdown('fontSize')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-            >
-              <Type className="w-4 h-4" />
-              <span>Font Size</span>
-            </button>
-            {dropdown === 'fontSize' && (
-              <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                <button onClick={() => applyFormatting('fontSize', '2')} className="block px-4 py-2 hover:bg-gray-100">
-                  Small
-                </button>
-                <button onClick={() => applyFormatting('fontSize', '3')} className="block px-4 py-2 hover:bg-gray-100">
-                  Normal
-                </button>
-                <button onClick={() => applyFormatting('fontSize', '4')} className="block px-4 py-2 hover:bg-gray-100">
-                  Large
-                </button>
-                <button onClick={() => applyFormatting('fontSize', '5')} className="block px-4 py-2 hover:bg-gray-100">
-                  Extra L
-                </button>
-              </div>
-            )}
-          </div>
+            <div className="relative">
+              <button
+                onClick={() => toggleDropdown('foreColor')}
+                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
+              >
+                <Palette className="w-4 h-4" />
+                <span>Text Color</span>
+              </button>
+              {dropdown === 'foreColor' && (
+                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
+                  <button onClick={() => applyFormatting('foreColor', '#000000')} className="w-6 h-6 bg-black rounded" />
+                  <button onClick={() => applyFormatting('foreColor', '#4c51bf')} className="w-6 h-6 bg-indigo-600 rounded" />
+                  <button onClick={() => applyFormatting('foreColor', '#059669')} className="w-6 h-6 bg-teal-600 rounded" />
+                  <button onClick={() => applyFormatting('foreColor', '#b45309')} className="w-6 h-6 bg-orange-600 rounded" />
+                  <button onClick={() => applyFormatting('foreColor', '#9d174d')} className="w-6 h-6 bg-pink-600 rounded" />
+                </div>
+              )}
+            </div>
 
-          <div className="relative">
-            <button
-              onClick={() => toggleDropdown('foreColor')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-            >
-              <Palette className="w-4 h-4" />
-              <span>Text Color</span>
-            </button>
-            {dropdown === 'foreColor' && (
-              <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
-                <button onClick={() => applyFormatting('foreColor', '#000000')} className="w-6 h-6 bg-black rounded" />
-                <button onClick={() => applyFormatting('foreColor', '#4c51bf')} className="w-6 h-6 bg-indigo-600 rounded" />
-                <button onClick={() => applyFormatting('foreColor', '#059669')} className="w-6 h-6 bg-teal-600 rounded" />
-                <button onClick={() => applyFormatting('foreColor', '#b45309')} className="w-6 h-6 bg-orange-600 rounded" />
-                <button onClick={() => applyFormatting('foreColor', '#9d174d')} className="w-6 h-6 bg-pink-600 rounded" />
-              </div>
-            )}
-          </div>
-
-          <div className="relative">
-            <button
-              onClick={() => toggleDropdown('backColor')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-            >
-              <Highlighter className="w-4 h-4" />
-              <span>Highlight</span>
-            </button>
-            {dropdown === 'backColor' && (
-              <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
-                <button onClick={() => applyFormatting('backColor', '#a5b4fc')} className="w-6 h-6 bg-[#a5b4fc] rounded" />
-                <button onClick={() => applyFormatting('backColor', '#6ee7b7')} className="w-6 h-6 bg-[#6ee7b7] rounded" />
-                <button onClick={() => applyFormatting('backColor', '#fbbf24')} className="w-6 h-6 bg-[#fbbf24] rounded" />
-                <button onClick={() => applyFormatting('backColor', '#f472b6')} className="w-6 h-6 bg-[#f472b6] rounded" />
-                <button
-                  onClick={() => applyFormatting('backColor', 'transparent')}
-                  className="w-6 h-6 bg-transparent border-2 border-gray-300 rounded"
-                />
-              </div>
-            )}
-          </div>
-          <div className="relative">
-            <button
-              onClick={() => toggleDropdown('textFormat')}
-              className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-            >
-              <Bold className="w-4 h-4" />
-              <span>Format</span>
-            </button>
-            {dropdown === 'textFormat' && (
-              <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                <button onClick={() => applyFormatting('bold')} className="block px-4 py-2 hover:bg-gray-100">
-                  Bold
-                </button>
-                <button onClick={() => applyFormatting('italic')} className="block px-4 py-2 hover:bg-gray-100">
-                  Italic
-                </button>
-                <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">
-                  Underline
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="editor-container">
-          <div
-            ref={editorRef}
-            contentEditable
-            onInput={handleContentChange}
-            className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
-            placeholder="Start writing your note..."
-          />
-
-          {showSuggestion && suggestion && suggestionPosition && (
-            <div
-              ref={suggestionRef}
-              className="suggestion-container"
-              style={{
-                top: `${suggestionPosition.top}px`,
-                left: `${suggestionPosition.left}px`,
-              }}
-              onMouseDown={(e) => e.stopPropagation()} 
-            >
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-xs font-semibold text-purple-600">Gemini Suggestion</span>
-                <div className="flex space-x-2">
+            <div className="relative">
+              <button
+                onClick={() => toggleDropdown('backColor')}
+                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
+              >
+                <Highlighter className="w-4 h-4" />
+                <span>Highlight</span>
+              </button>
+              {dropdown === 'backColor' && (
+                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
+                  <button onClick={() => applyFormatting('backColor', '#a5b4fc')} className="w-6 h-6 bg-[#a5b4fc] rounded" />
+                  <button onClick={() => applyFormatting('backColor', '#6ee7b7')} className="w-6 h-6 bg-[#6ee7b7] rounded" />
+                  <button onClick={() => applyFormatting('backColor', '#fbbf24')} className="w-6 h-6 bg-[#fbbf24] rounded" />
+                  <button onClick={() => applyFormatting('backColor', '#f472b6')} className="w-6 h-6 bg-[#f472b6] rounded" />
                   <button
-                    onClick={acceptSuggestion}
-                    className="p-1 bg-purple-500 text-white rounded hover:bg-purple-600"
-                    title="Accept suggestion"
-                  >
-                    <Check className="w-4 h-4" />
+                    onClick={() => applyFormatting('backColor', 'transparent')}
+                    className="w-6 h-6 bg-transparent border-2 border-gray-300 rounded"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => toggleDropdown('textFormat')}
+                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
+              >
+                <Bold className="w-4 h-4" />
+                <span>Format</span>
+              </button>
+              {dropdown === 'textFormat' && (
+                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
+                  <button onClick={() => applyFormatting('bold')} className="block px-4 py-2 hover:bg-gray-100">
+                    Bold
                   </button>
-                  <button
-                    onClick={rejectSuggestion}
-                    className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
-                    title="Reject suggestion"
-                  >
-                    <X className="w-4 h-4" />
+                  <button onClick={() => applyFormatting('italic')} className="block px-4 py-2 hover:bg-gray-100">
+                    Italic
+                  </button>
+                  <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">
+                    Underline
                   </button>
                 </div>
-              </div>
-              <div className="suggestion-text">{suggestion}</div>
-              <div className="shortcuts-hint">
-                <span>
-                  <span className="shortcut-key">Tab</span> to accept
-                </span>
-                <span>
-                  <span className="shortcut-key">Esc</span> to reject
-                </span>
-              </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {chatVisible && (
-        <div className="chat-container chat-container-enter">
-          <GeminiChat onClose={() => setShowGeminiChat(false)} />
+          <div className="editor-container flex-1">
+            <div
+              ref={editorRef}
+              contentEditable
+              onInput={handleContentChange}
+              className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
+              placeholder="Start writing your note..."
+            />
+          </div>
         </div>
-      )}
+
+        {chatVisible && (
+          <div className="chat-container chat-container-enter">
+            <GeminiChat onClose={() => setShowGeminiChat(false)} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+const style = document.createElement('style');
+style.innerHTML = `
+  label:focus, label:focus-visible, button:focus {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+`;
+document.head.appendChild(style);
+
+const styleForCss = document.createElement('style');
+styleForCss.innerHTML = `
+  .editor-main-container {
+    height: 100vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+`;
+document.head.appendChild(styleForCss);

@@ -7,7 +7,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = join(app.getPath('userData'), 'notesapp.db');
+const dbPath = join(app.getPath('userData'), 'notesapp2.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -19,9 +19,89 @@ const db = new sqlite3.Database(dbPath, (err) => {
       id TEXT PRIMARY KEY,
       title TEXT,
       content TEXT,
-      updatedAt TEXT
+      updatedAt TEXT,
+      coverImage TEXT
     )`);
   }
+});
+
+const migrateDatabase = () => {
+  db.serialize(() => {
+    db.all("PRAGMA table_info(notes)", (err, rows) => {
+      if (err) {
+        console.error("Erro ao verificar a tabela notes:", err);
+        return;
+      }
+
+      const columns = rows.map((row) => row.name);
+      if (!columns.includes("coverImage")) {
+        console.log("Migrating database to add coverImage column...");
+        db.run("ALTER TABLE notes RENAME TO notes_old", (err) => {
+          if (err) {
+            console.error("Erro ao renomear a tabela notes:", err);
+            return;
+          }
+
+          db.run(
+            `CREATE TABLE notes (
+              id TEXT PRIMARY KEY,
+              title TEXT,
+              content TEXT,
+              updatedAt TEXT,
+              coverImage TEXT
+            )`,
+            (err) => {
+              if (err) {
+                console.error("Erro ao criar a nova tabela notes:", err);
+                return;
+              }
+
+              db.run(
+                `INSERT INTO notes (id, title, content, updatedAt)
+                 SELECT id, title, content, updatedAt FROM notes_old`,
+                (err) => {
+                  if (err) {
+                    console.error("Erro ao copiar dados para a nova tabela notes:", err);
+                    return;
+                  }
+
+                  db.run("DROP TABLE notes_old", (err) => {
+                    if (err) {
+                      console.error("Erro ao excluir a tabela antiga notes_old:", err);
+                    } else {
+                      console.log("Migração concluída com sucesso!");
+                    }
+                  });
+                }
+              );
+            }
+          );
+        });
+      } else {
+        console.log("A tabela notes já está atualizada.");
+      }
+    });
+  });
+};
+
+const deletedNoteIds = new Set();
+
+db.serialize(() => {
+  migrateDatabase();
+  
+  db.run(`CREATE TABLE IF NOT EXISTS deleted_notes (
+    id TEXT PRIMARY KEY,
+    deletedAt TEXT
+  )`);
+  
+  db.all('SELECT id FROM deleted_notes', [], (err, rows) => {
+    if (err) {
+      console.error('Error loading deleted note IDs:', err);
+    } else {
+      console.log(`Loaded ${rows.length} deleted note IDs`);
+      rows.forEach(row => deletedNoteIds.add(row.id));
+    }
+  });
 });
 
 let mainWindow;
@@ -40,56 +120,124 @@ app.whenReady().then(() => {
   mainWindow.loadURL('http://localhost:5173'); 
 
   ipcMain.handle('load-notes', async () => {
-    console.log('Carregando notas do banco de dados...');
     return new Promise((resolve, reject) => {
       db.all('SELECT * FROM notes', [], (err, rows) => {
         if (err) {
           console.error('Erro ao carregar as notas:', err);
           reject(err);
         } else {
-          console.log(`Notas carregadas com sucesso: ${rows.length} notas encontradas.`);
-          resolve(rows);
+          const filteredRows = rows.filter((note) => !deletedNoteIds.has(note.id));
+          resolve(filteredRows);
         }
       });
     });
   });
 
   ipcMain.on('save-notes', (_, notes) => {
-    console.log(`Salvando ${notes.length} notas no banco de dados...`);
-    const stmt = db.prepare('INSERT OR REPLACE INTO notes (id, title, content, updatedAt) VALUES (?, ?, ?, ?)');
+    const stmt = db.prepare('INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)');
 
     notes.forEach((note) => {
-      const updatedAt = new Date().toISOString();
-      console.log(`Salvando nota com ID: ${note.id}`);
-      stmt.run(note.id, note.title, note.content, updatedAt);
+      const updatedAt = note.updatedAt instanceof Date 
+        ? note.updatedAt.toISOString() 
+        : typeof note.updatedAt === 'string' 
+          ? note.updatedAt 
+          : new Date().toISOString();
+          
+      stmt.run(note.id, note.title, note.content, updatedAt, note.coverImage || null);
     });
 
     stmt.finalize((err) => {
       if (err) {
         console.error('Erro ao finalizar a inserção das notas:', err);
-      } else {
-        console.log('Notas salvas com sucesso!');
       }
     });
   });
 
+  ipcMain.on('save-note', (_, note) => {
+    const stmt = db.prepare('INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)');
+    
+    const updatedAt = note.updatedAt instanceof Date 
+      ? note.updatedAt.toISOString() 
+      : typeof note.updatedAt === 'string' 
+        ? note.updatedAt 
+        : new Date().toISOString();
+    
+    stmt.run(note.id, note.title, note.content, updatedAt, note.coverImage || null);
+    
+    stmt.finalize((err) => {
+      if (err) {
+        console.error('Error finalizing note save:', err);
+      }
+    });
+  });
+
+  ipcMain.handle('save-note-sync', async (_, note) => {
+    return new Promise((resolve, reject) => {
+      const updatedAt = note.updatedAt instanceof Date 
+        ? note.updatedAt.toISOString() 
+        : typeof note.updatedAt === 'string' 
+          ? note.updatedAt 
+          : new Date().toISOString();
+      
+      db.run(
+        'INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)',
+        [note.id, note.title, note.content, updatedAt, note.coverImage || null],
+        function(err) {
+          if (err) {
+            console.error('Error saving note:', err);
+            reject(err);
+          } else {
+            resolve(true);
+          }
+        }
+      );
+    });
+  });
+
   setInterval(() => {
-    console.log('Salvando notas automaticamente...');
     db.all('SELECT * FROM notes', [], (err, rows) => {
       if (err) {
         console.error('Erro ao carregar as notas para salvar:', err);
       } else {
-        ipcMain.emit('save-notes', [], rows); 
+        const filteredRows = rows.filter(note => !deletedNoteIds.has(note.id));
+        
+        const noteIdsToDelete = rows
+          .filter(note => deletedNoteIds.has(note.id))
+          .map(note => note.id);
+          
+        if (noteIdsToDelete.length > 0) {
+          noteIdsToDelete.forEach(id => {
+            db.run('DELETE FROM notes WHERE id = ?', [id]);
+          });
+        }
+        
+        ipcMain.emit('save-notes', [], filteredRows);
       }
     });
   }, 10000); 
 
   ipcMain.on('delete-note', (_, id) => {
-    const stmt = db.prepare('DELETE FROM notes WHERE id = ?');
-    stmt.run(id, (err) => {
+    db.run('DELETE FROM notes WHERE id = ?', [id], function(err) {
       if (err) {
         console.error('Erro ao excluir nota:', err);
+        return;
       }
+      
+      db.run(
+        'INSERT OR REPLACE INTO deleted_notes (id, deletedAt) VALUES (?, ?)',
+        [id, new Date().toISOString()],
+        function(err) {
+          if (err) {
+            console.error('Error tracking deleted note ID:', err);
+          } else {
+            deletedNoteIds.add(id);
+            
+            if (mainWindow) {
+              mainWindow.webContents.send('note-deleted', id);
+            }
+          }
+        }
+      );
     });
   });
 });

@@ -90,7 +90,7 @@ function GeminiChat({ onClose }: GeminiChatProps) {
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Type your question... (Ctrl+Enter to send)"
-          className="w-full p-2 border rounded resize-none"
+          className="w-full p-2 border rounded resize-none focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-purple-400 transition"
           rows={3}
         />
         <button

@@ -25,10 +25,15 @@ export function Sidebar({ notes, activeNoteId, onNoteSelect, onDeleteNote, onNew
       <div className="overflow-y-auto flex-1 custom-scrollbar px-4 pb-4">
         <div className="space-y-2">
           {notes.map((note) => {
-            const updatedAt = new Date(note.updatedAt);
-            const formattedDate = updatedAt instanceof Date && !isNaN(updatedAt.getTime())
-              ? updatedAt.toLocaleDateString()
-              : 'Invalid date';
+            let formattedDate = 'Invalid date';
+            try {
+              const date = new Date(note.updatedAt);
+              if (!isNaN(date.getTime())) {
+                formattedDate = date.toLocaleDateString();
+              }
+            } catch (e) {
+              console.error('Error parsing date:', e);
+            }
 
             return (
               <div
@@ -38,6 +43,13 @@ export function Sidebar({ notes, activeNoteId, onNoteSelect, onDeleteNote, onNew
                 }`}
                 onClick={() => onNoteSelect(note.id)}
               >
+                {note.coverImage && (
+                  <img
+                    src={note.coverImage}
+                    alt="Cover Preview"
+                    className="w-10 h-10 object-cover rounded-lg mr-3"
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-gray-900 truncate">{note.title || 'Untitled'}</h3>
                   <p className="text-sm text-gray-500 truncate">{formattedDate}</p>

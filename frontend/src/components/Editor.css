@@ -148,3 +148,139 @@ button[aria-label="Fechar chat"] {
   border-radius: 3px;
   font-family: monospace;
 }
+
+.reactEasyCrop_Container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.reactEasyCrop_CropArea {
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 0;
+}
+
+.fixed.inset-0 {
+  z-index: 2000;
+}
+
+.fixed.inset-0 > div {
+  border-radius: 0.5rem !important;
+  overflow: hidden;
+}
+
+.crop-modal {
+  width: 80%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background-color: white;
+}
+
+.crop-container {
+  position: relative;
+  background-color: white;
+}
+
+.cover-adjusting-container {
+  position: relative !important;
+  width: 100% !important;
+  height: 192px !important;
+  background-color: #000 !important;
+  border-radius: 0.5rem !important;
+  overflow: hidden !important;
+  cursor: ns-resize !important;
+  margin-bottom: 1rem !important;
+  user-select: none !important;
+  touch-action: none !important;
+}
+
+.cover-adjusting-container * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.cover-adjusting-container img {
+  pointer-events: none !important;
+}
+
+.cover-crop-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 10px;
+  z-index: 1000;
+}
+
+.save-crop-btn,
+.cancel-crop-btn {
+  padding: 8px;
+  background-color: white !important;
+  color: #374151;
+  border-radius: 9999px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.save-crop-btn:hover,
+.cancel-crop-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.3);
+}
+
+.vertical-drag-instructions {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.5);
+  color: white;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.image-drag-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  user-select: none;
+  pointer-events: auto !important;
+  cursor: ns-resize !important;
+}
+
+.image-drag-container img {
+  pointer-events: auto !important;
+  cursor: ns-resize !important;
+  touch-action: none !important;
+}
+
+.is-dragging {
+  outline: 2px solid #ff0000 !important;
+}
+
+.reactEasyCrop_Container,
+.reactEasyCrop_CropArea,
+.reactEasyCrop_CropAreaGrid,
+.reactEasyCrop_Image,
+.crop-container-full-width,
+.cropper-wrapper {
+  display: none !important;
+}
