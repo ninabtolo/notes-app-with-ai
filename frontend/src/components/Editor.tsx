@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
 import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings, Image, Save, XCircle, Link } from 'lucide-react'; 
-import html2pdf from 'html2pdf.js';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import './Editor.css';
 import GeminiChat from './GeminiChat';
 import { generateSuggestion } from '../gemini';
@@ -80,12 +81,163 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     }
   };
 
+  const handleContentChange = () => {
+    if (editorRef.current) {
+      onUpdateNote({
+        ...note,
+        content: editorRef.current.innerHTML,
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (isSuggestionEnabled) {
+        if (recentlyAcceptedSuggestion) {
+          setTimeout(() => {
+            requestSuggestion();
+          }, 800);
+        } else {
+          requestSuggestion();
+        }
+      }
+    }
+  };
+
   const applyFormatting = (command: string, value?: string) => {
     restoreSelection();
-    document.execCommand(command, false, value);
+    
+    if (command === 'backColor') {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const selectedText = range.toString();
+        
+        if (selectedText.trim().length > 0) {
+          if (value === 'transparent') {
+            document.execCommand(command, false, value);
+          } else {
+            document.execCommand(command, false, value);
+            const newRange = selection.getRangeAt(0);
+            newRange.collapse(false);
+          }
+        } else if (value !== 'transparent') {
+          const span = document.createElement('span');
+          span.style.backgroundColor = value || '';
+          span.setAttribute('data-empty-highlight', 'true');
+          span.textContent = '\u200B';
+          range.insertNode(span);
+          range.selectNodeContents(span);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }
+    } else {
+      document.execCommand(command, false, value);
+    }
+    
     handleContentChange();
     setDropdown(null);
   };
+
+  useEffect(() => {
+    const handleInput = (e: Event) => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+      
+      const range = selection.getRangeAt(0);
+      const node = range.startContainer;
+      
+      if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
+        const parent = node.parentElement;
+        
+        if (parent.hasAttribute('data-empty-highlight')) {
+          if (!node.textContent?.trim()) {
+            const content = node.textContent || '';
+            const textNode = document.createTextNode(content);
+            parent.parentNode?.insertBefore(textNode, parent);
+            parent.parentNode?.removeChild(parent);
+            
+            const newRange = document.createRange();
+            newRange.setStart(textNode, content.length);
+            newRange.setEnd(textNode, content.length);
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+          } else {
+            parent.removeAttribute('data-empty-highlight');
+          }
+        } else if (parent.style.backgroundColor && !node.textContent?.trim()) {
+          const content = node.textContent || '';
+          const textNode = document.createTextNode(content);
+          parent.parentNode?.insertBefore(textNode, parent);
+          parent.parentNode?.removeChild(parent);
+          
+          const newRange = document.createRange();
+          newRange.setStart(textNode, content.length);
+          newRange.setEnd(textNode, content.length);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        }
+      }
+    };
+    
+    if (editorRef.current) {
+      editorRef.current.addEventListener('input', handleInput);
+    }
+    
+    return () => {
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('input', handleInput);
+      }
+    };
+  }, []);
+
+  const cleanupEmptyHighlights = (container: HTMLElement | null) => {
+    if (!container) return;
+    
+    const emptySpans = Array.from(container.querySelectorAll('span[style*="background-color"]'))
+      .filter(span => {
+        if (span.hasAttribute('data-empty-highlight')) {
+          return true;
+        }
+        
+        const hasOnlyWhitespace = !span.textContent?.trim();
+        
+        if (hasOnlyWhitespace) {
+          const prev = span.previousSibling;
+          const next = span.nextSibling;
+          
+          const prevHasContent = prev && prev.textContent && prev.textContent.trim() !== '';
+          const nextHasContent = next && next.textContent && next.textContent.trim() !== '';
+          
+          return !(prevHasContent && nextHasContent);
+        }
+        
+        return false;
+      });
+    
+    emptySpans.forEach(span => {
+      const textContent = span.textContent || '';
+      const text = document.createTextNode(textContent);
+      span.parentNode?.insertBefore(text, span);
+      span.parentNode?.removeChild(span);
+    });
+  };
+
+  useEffect(() => {
+    const handleEditorInput = () => {
+      cleanupEmptyHighlights(editorRef.current);
+      handleContentChange();
+    };
+    
+    if (editorRef.current) {
+      editorRef.current.addEventListener('input', handleEditorInput);
+    }
+    
+    return () => {
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('input', handleEditorInput);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const loadNotes = async () => {
@@ -407,50 +559,77 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     setShowSuggestion(false);
   };
 
-  const handleContentChange = () => {
-    if (editorRef.current) {
-      onUpdateNote({
-        ...note,
-        content: editorRef.current.innerHTML,
-        updatedAt: new Date().toISOString(),
-      });
-
-      if (isSuggestionEnabled) {
-        if (recentlyAcceptedSuggestion) {
-          setTimeout(() => {
-            requestSuggestion();
-          }, 800);
-        } else {
-          requestSuggestion();
-        }
-      }
-    }
-  };
-
   const exportToPDF = () => {
-    if (!editorRef.current) return;
-
-    const content = document.createElement('div');
-    content.innerHTML = `
+    if (!editorRef.current || !note) return;
+    
+    const pdfContent = document.createElement('div');
+    pdfContent.className = 'pdf-export-container';
+    pdfContent.style.padding = '20px';
+    pdfContent.style.backgroundColor = 'white';
+    pdfContent.style.width = '8.5in';
+    pdfContent.style.position = 'absolute';
+    pdfContent.style.left = '-9999px';
+    pdfContent.style.top = '0';
+    
+    const contentClone = editorRef.current.cloneNode(true) as HTMLElement;
+    
+    const highlightedElements = contentClone.querySelectorAll('[style*="background-color"]');
+    highlightedElements.forEach(el => {
+      const element = el as HTMLElement;
+      element.style.backgroundColor = '';
+    });
+    
+    pdfContent.innerHTML = `
       <h1 style="font-size: 24px; font-weight: bold; margin-bottom: 16px;">${note.title || 'Untitled'}</h1>
-      ${editorRef.current.innerHTML}
+      ${contentClone.innerHTML}
       <div style="height: 20px;"></div> 
     `;
+    
+    document.body.appendChild(pdfContent);
 
-    const opt = {
-      margin: [1, 0.5, 1, 0.5],
-      filename: `${note.title || 'note'}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        scrollY: 0,
-        windowHeight: document.documentElement.offsetHeight,
-      },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-    };
-
-    html2pdf().set(opt).from(content).save();
+    html2canvas(pdfContent, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      allowTaint: true
+    }).then(canvas => {
+      document.body.removeChild(pdfContent);
+      
+      const imgWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      let position = 0;
+      
+      const addCanvasPage = (startPos) => {
+        const contentHeight = Math.min(imgHeight - startPos, pageHeight - 20);
+        
+        pdf.addImage(
+          canvas.toDataURL('image/jpeg', 1.0), 
+          'JPEG', 
+          10,
+          10,
+          imgWidth - 20,
+          contentHeight,
+          '', 
+          'FAST',
+          0,
+          -startPos * (imgWidth - 20) / imgHeight
+        );
+        
+        return startPos + contentHeight;
+      };
+      
+      position = addCanvasPage(position);
+      
+      while (position < imgHeight) {
+        pdf.addPage();
+        position = addCanvasPage(position);
+      }
+      
+      pdf.save(`${note.title || 'note'}.pdf`);
+    });
   };
 
   const toggleSuggestions = () => {
@@ -510,14 +689,57 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!showSuggestion || !suggestion) return;
-
-      if (e.key === 'Tab' && !e.shiftKey) {
-        e.preventDefault();
-        acceptSuggestion();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        rejectSuggestion();
+      if (showSuggestion && suggestion) {
+        if (e.key === 'Tab' && !e.shiftKey) {
+          e.preventDefault();
+          acceptSuggestion();
+          return;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          rejectSuggestion();
+          return;
+        }
+      }
+      
+      if (e.key === 'Enter') {
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          const currentNode = range.startContainer;
+          
+          let highlightSpan = null;
+          if (currentNode.nodeType === Node.TEXT_NODE && currentNode.parentElement) {
+            if (currentNode.parentElement.style.backgroundColor) {
+              highlightSpan = currentNode.parentElement;
+            }
+          } else if (currentNode.nodeType === Node.ELEMENT_NODE && 
+                    (currentNode as HTMLElement).style && 
+                    (currentNode as HTMLElement).style.backgroundColor) {
+            highlightSpan = currentNode as HTMLElement;
+          }
+          
+          if (highlightSpan) {
+            const backgroundColor = highlightSpan.style.backgroundColor;
+            
+            setTimeout(() => {
+              const newSelection = window.getSelection();
+              if (newSelection && newSelection.rangeCount > 0) {
+                const newRange = newSelection.getRangeAt(0);
+                const span = document.createElement('span');
+                span.style.backgroundColor = backgroundColor;
+                
+                newRange.insertNode(span);
+                
+                newRange.selectNodeContents(span);
+                newRange.collapse(true);
+                newSelection.removeAllRanges();
+                newSelection.addRange(newRange);
+                
+                handleContentChange();
+              }
+            }, 0);
+          }
+        }
       }
     };
 
@@ -530,18 +752,16 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         editorRef.current.removeEventListener('keydown', handleKeyDown);
       }
     };
-  }, [showSuggestion, suggestion]);
+  }, [showSuggestion, suggestion, acceptSuggestion, rejectSuggestion, handleContentChange]);
 
   useEffect(() => {
-    // Create a global function that can be called from HTML onclick
     window.openExternalLink = (url: string) => {
       console.log('Opening external link from onclick:', url);
       ipc.openExternal(url);
-      return false; // Prevent default
+      return false;
     };
     
     return () => {
-      // Clean up when component unmounts
       delete window.openExternalLink;
     };
   }, []);
@@ -1057,3 +1277,4 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     </div>
   );
 }
+
