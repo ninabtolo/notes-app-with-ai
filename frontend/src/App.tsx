@@ -3,7 +3,7 @@ import { Note } from './types';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
 import { WelcomeScreen } from './components/WelcomeScreen';
-const { ipcRenderer } = window.require('electron');
+import { ipc } from './utils/ipc';
 
 function App() {
   const [notes, setNotes] = useState<Note[]>([]);
@@ -16,7 +16,7 @@ function App() {
       setShowWelcome(false);
     }
     
-    ipcRenderer.invoke('load-notes').then((savedNotes: Note[]) => {
+    ipc.invoke('load-notes').then((savedNotes: Note[]) => {
       setNotes(savedNotes);
       if (savedNotes.length > 0) {
         setActiveNoteId(savedNotes[0].id);
@@ -25,20 +25,24 @@ function App() {
   }, []);
 
   useEffect(() => {
-    ipcRenderer.send('save-notes', notes);
+    ipc.send('save-notes', notes);
   }, [notes]);
 
   useEffect(() => {
-    ipcRenderer.on('note-deleted', (_, deletedId) => {
-      setNotes(prevNotes => prevNotes.filter(note => note.id !== deletedId));
-      
-      if (activeNoteId === deletedId) {
-        setActiveNoteId(null);
-      }
-    });
+    if (window.electron) {
+      window.electron.ipcRenderer.on('note-deleted', (deletedId) => {
+        setNotes(prevNotes => prevNotes.filter(note => note.id !== deletedId));
+        
+        if (activeNoteId === deletedId) {
+          setActiveNoteId(null);
+        }
+      });
+    }
 
     return () => {
-      ipcRenderer.removeAllListeners('note-deleted');
+      if (window.electron && window.electron.ipcRenderer.removeAllListeners) {
+        window.electron.ipcRenderer.removeAllListeners('note-deleted');
+      }
     };
   }, [activeNoteId]);
 
@@ -68,7 +72,7 @@ function App() {
   };
 
   const deleteNote = useCallback((id: string) => {
-    ipcRenderer.send('delete-note', id);
+    ipc.send('delete-note', id);
     
     setNotes(prevNotes => prevNotes.filter(note => note.id !== id));
     

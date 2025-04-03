@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import require$$0, { dirname, join } from "path";
 import require$$0$1 from "fs";
 import require$$2 from "events";
@@ -471,12 +471,19 @@ app.whenReady().then(() => {
     width: 1200,
     height: 700,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: require$$0.join(__dirname, "preload.js")
     },
     icon: require$$0.join(__dirname, "assets", "notes7.ico")
   });
   mainWindow.loadURL("http://localhost:5173");
+  ipcMain.on("open-external-link", (_, url) => {
+    console.log(`Opening external URL in default browser: ${url}`);
+    shell.openExternal(url).catch((error) => {
+      console.error("Failed to open URL in external browser:", error);
+    });
+  });
   ipcMain.handle("load-notes", async () => {
     return new Promise((resolve, reject) => {
       db.all("SELECT * FROM notes", [], (err, rows) => {

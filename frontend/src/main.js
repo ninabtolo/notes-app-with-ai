@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path, { join } from 'path';
 import sqlite3 from 'sqlite3';
 import { fileURLToPath } from 'url';
@@ -111,13 +111,21 @@ app.whenReady().then(() => {
     width: 1200,
     height: 700,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'assets', 'notes7.ico'), 
   });
 
   mainWindow.loadURL('http://localhost:5173'); 
+
+  ipcMain.on('open-external-link', (_, url) => {
+    console.log(`Opening external URL in default browser: ${url}`);
+    shell.openExternal(url).catch(error => {
+      console.error('Failed to open URL in external browser:', error);
+    });
+  });
 
   ipcMain.handle('load-notes', async () => {
     return new Promise((resolve, reject) => {

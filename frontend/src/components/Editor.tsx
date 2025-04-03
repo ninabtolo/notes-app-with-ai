@@ -1,12 +1,25 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
-import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings, Image, Save, XCircle } from 'lucide-react'; 
+import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings, Image, Save, XCircle, Link } from 'lucide-react'; 
 import html2pdf from 'html2pdf.js';
-import { ipcRenderer } from 'electron';
 import './Editor.css';
 import GeminiChat from './GeminiChat';
 import { generateSuggestion } from '../gemini';
 import debounce from 'lodash.debounce';
+import { ipc } from '../utils/ipc';
+
+declare global {
+  interface Window {
+    electron?: {
+      ipcRenderer: {
+        send: (channel: string, data: any) => void;
+        invoke: (channel: string, data: any) => Promise<any>;
+        on: (channel: string, func: (...args: any[]) => void) => void;
+      };
+    };
+    openExternalLink?: (url: string) => boolean;
+  }
+}
 
 interface EditorProps {
   note: Note | null;
@@ -30,6 +43,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [showSettingsDropdown, setShowSettingsDropdown] = useState<boolean>(false);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
+  const [showLinkForm, setShowLinkForm] = useState<boolean>(false);
+  const [linkUrl, setLinkUrl] = useState<string>('');
+  const [linkTitle, setLinkTitle] = useState<string>('');
+  const linkFormRef = useRef<HTMLDivElement>(null);
   const [isCropping, setIsCropping] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [isAdjustingCover, setIsAdjustingCover] = useState(false);
@@ -72,8 +89,13 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
   useEffect(() => {
     const loadNotes = async () => {
-      const notesData = await ipcRenderer.invoke('load-notes');
-      setNotes(notesData);
+      try {
+        const notesData = await ipc.invoke('load-notes');
+        setNotes(notesData || []);
+      } catch (error) {
+        console.error('Erro ao carregar notas:', error);
+        setNotes([]);
+      }
     };
 
     loadNotes();
@@ -82,7 +104,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   useEffect(() => {
     if (note) {
       onUpdateNote(note);
-      ipcRenderer.send('save-notes', notes);
+      ipc.send('save-notes', notes);
     }
   }, [note, notes]);
 
@@ -171,7 +193,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             updatedAt: new Date().toISOString(),
           };
 
-          ipcRenderer.invoke('save-note-sync', updatedNote)
+          ipc.invoke('save-note-sync', updatedNote)
             .then(() => console.log("Note saved to database successfully"))
             .catch(err => console.error("Error saving note:", err));
 
@@ -511,44 +533,166 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   }, [showSuggestion, suggestion]);
 
   useEffect(() => {
-    const handleSelectionChange = (e: Event) => {
-      if (!showSuggestion || !suggestion) return;
-      
-      if (suggestionRef.current && e instanceof MouseEvent) {
-        const clickedElement = e.target as Node;
-        if (suggestionRef.current.contains(clickedElement)) {
-          return;
-        }
-      }
-
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const container = range.startContainer;
-
-        if (editorRef.current && editorRef.current.contains(container)) {
-          calculateCursorPosition();
-        }
-      }
-    };
-
-    document.addEventListener('selectionchange', handleSelectionChange);
-    
-    const handleSuggestionClick = (e: MouseEvent) => {
-      e.stopPropagation(); 
+    // Create a global function that can be called from HTML onclick
+    window.openExternalLink = (url: string) => {
+      console.log('Opening external link from onclick:', url);
+      ipc.openExternal(url);
+      return false; // Prevent default
     };
     
-    if (suggestionRef.current) {
-      suggestionRef.current.addEventListener('mousedown', handleSuggestionClick);
-    }
-
     return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-      if (suggestionRef.current) {
-        suggestionRef.current.removeEventListener('mousedown', handleSuggestionClick);
+      // Clean up when component unmounts
+      delete window.openExternalLink;
+    };
+  }, []);
+
+  const handleLinkClick = useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const linkBox = target.closest('.link-box');
+    
+    if (linkBox) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const url = linkBox.getAttribute('data-url');
+      console.log("📢 Link box clicked via event listener, URL:", url);
+      
+      if (url) {
+        ipc.openExternal(url);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const editorElement = editorRef.current;
+    if (editorElement) {
+      editorElement.removeEventListener('click', handleLinkClick as any);
+      editorElement.addEventListener('click', handleLinkClick as any);
+      console.log("📢 Click listener added to editor");
+    }
+    
+    return () => {
+      if (editorElement) {
+        editorElement.removeEventListener('click', handleLinkClick as any);
       }
     };
-  }, [showSuggestion, suggestion]);
+  }, [handleLinkClick]);
+
+  const insertLink = () => {
+    if (!linkUrl.trim() || !linkTitle.trim()) return;
+    
+    let formattedUrl = linkUrl.trim();
+    if (!/^https?:\/\//i.test(formattedUrl)) {
+      formattedUrl = 'https://' + formattedUrl;
+    }
+    
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+    
+    restoreSelection();
+    
+    const linkId = `link-${Date.now()}`;
+    const linkBox = document.createElement('div');
+    linkBox.className = 'link-box';
+    linkBox.id = linkId;
+    linkBox.setAttribute('data-url', formattedUrl);
+    linkBox.setAttribute('role', 'button');
+    linkBox.setAttribute('tabindex', '0');
+    linkBox.setAttribute('title', `Abrir ${formattedUrl}`);
+    
+    linkBox.setAttribute('onclick', `return window.openExternalLink('${formattedUrl.replace(/'/g, "\\'")}')`);
+    
+    linkBox.innerHTML = `
+      <div class="link-title">
+        ${linkTitle}
+      </div>
+      <div class="link-url">${formattedUrl}</div>
+    `;
+    
+    if (savedRange && editorRef.current) {
+      try {
+        let isRangeInEditor = false;
+        let node = savedRange.commonAncestorContainer;
+        while (node) {
+          if (node === editorRef.current) {
+            isRangeInEditor = true;
+            break;
+          }
+          node = node.parentNode;
+        }
+        
+        if (!isRangeInEditor) {
+          const range = document.createRange();
+          range.selectNodeContents(editorRef.current);
+          range.collapse(false);
+          savedRange = range;
+          
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+        
+        savedRange.deleteContents();
+        savedRange.insertNode(linkBox);
+        
+        const br = document.createElement('br');
+        if (linkBox.parentNode) {
+          linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
+        }
+        
+        const range = document.createRange();
+        range.setStartAfter(br);
+        range.collapse(true);
+        
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      } catch (error) {
+        editorRef.current.appendChild(linkBox);
+        editorRef.current.appendChild(document.createElement('br'));
+      }
+    } else if (editorRef.current) {
+      editorRef.current.appendChild(linkBox);
+      editorRef.current.appendChild(document.createElement('br'));
+      
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      
+      const selection = window.getSelection();
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+    
+    setLinkUrl('');
+    setLinkTitle('');
+    setShowLinkForm(false);
+    handleContentChange();
+  };
+
+  useEffect(() => {
+    const handleClickOutsideLinkForm = (event: MouseEvent) => {
+      if (
+        linkFormRef.current && 
+        !linkFormRef.current.contains(event.target as Node) &&
+        !(event.target as Element).closest('.add-link-button')
+      ) {
+        setShowLinkForm(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutsideLinkForm);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideLinkForm);
+    };
+  }, []);
 
   if (!note) {
     return (
@@ -770,6 +914,75 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                   <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">
                     Underline
                   </button>
+                </div>
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded add-link-button"
+                onClick={() => {
+                  const selection = window.getSelection();
+                  if (selection && selection.rangeCount > 0) {
+                    setSavedRange(selection.getRangeAt(0));
+                  }
+                  setShowLinkForm(!showLinkForm);
+                }}
+              >
+                <Link className="w-4 h-4" />
+                <span>Add Link</span>
+              </button>
+              
+              {showLinkForm && (
+                <div 
+                  ref={linkFormRef}
+                  className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-4 z-10 w-80"
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <label htmlFor="linkTitle" className="block text-sm font-medium text-gray-700 mb-1">
+                        Link Title
+                      </label>
+                      <input
+                        type="text"
+                        id="linkTitle"
+                        value={linkTitle}
+                        onChange={(e) => setLinkTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="Enter title"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label htmlFor="linkUrl" className="block text-sm font-medium text-gray-700 mb-1">
+                        URL
+                      </label>
+                      <input
+                        type="url"
+                        id="linkUrl"
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        placeholder="https://"
+                      />
+                    </div>
+                    
+                    <div className="flex justify-end space-x-2 pt-2">
+                      <button
+                        onClick={() => setShowLinkForm(false)}
+                        className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={insertLink}
+                        className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
+                        disabled={!linkUrl.trim() || !linkTitle.trim()}
+                      >
+                        Insert
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
