@@ -9,7 +9,6 @@ import { generateSuggestion } from '../gemini';
 import debounce from 'lodash.debounce';
 import { ipc } from '../utils/ipc';
 
-// Define window interface extensions
 declare global {
   interface Window {
     openExternalLink?: (url: string) => boolean;
@@ -574,12 +573,33 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     pdfContent.className = 'pdf-export-container';
     pdfContent.style.padding = '20px';
     pdfContent.style.backgroundColor = 'white';
-    pdfContent.style.width = '8.5in';
+    pdfContent.style.width = '794px';
+    pdfContent.style.maxWidth = '794px';
+    pdfContent.style.boxSizing = 'border-box';
     pdfContent.style.position = 'absolute';
     pdfContent.style.left = '-9999px';
     pdfContent.style.top = '0';
+    pdfContent.style.fontFamily = 'Arial, sans-serif';
+    pdfContent.style.wordWrap = 'break-word';
     
     const contentClone = editorRef.current.cloneNode(true) as HTMLElement;
+    
+    const linkBoxes = contentClone.querySelectorAll('.link-box');
+    linkBoxes.forEach(box => {
+      const linkBox = box as HTMLElement;
+      const url = linkBox.getAttribute('data-url') || '';
+      const title = linkBox.querySelector('.link-title')?.textContent || '';
+      
+      linkBox.innerHTML = `
+        <div style="margin-bottom: 5px; font-weight: bold;">${title}</div>
+        <div style="font-size: 0.9em; color: #4361ee;">${url}</div>
+      `;
+      linkBox.style.border = '1px solid #e2e8f0';
+      linkBox.style.padding = '10px';
+      linkBox.style.borderRadius = '5px';
+      linkBox.style.marginBottom = '10px';
+      linkBox.style.backgroundColor = '#f8fafc';
+    });
     
     const highlightedElements = contentClone.querySelectorAll('[style*="background-color"]');
     highlightedElements.forEach(el => {
@@ -594,44 +614,61 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     `;
     
     document.body.appendChild(pdfContent);
-
+  
     html2canvas(pdfContent, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       logging: false,
-      allowTaint: true
+      allowTaint: true,
+      width: 794, 
+      windowWidth: 794
     }).then(canvas => {
       document.body.removeChild(pdfContent);
       
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
       
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const canvasRatio = canvas.height / canvas.width;
+      const imgWidth = pdfWidth - 20; 
+      const imgHeight = imgWidth * canvasRatio;
+      const xPos = 10; 
+      
       let position = 0;
+      let heightLeft = imgHeight;
       
-      const addCanvasPage = (startPos: number): number => {
-        const contentHeight = Math.min(imgHeight - startPos, pageHeight - 20);
-        
+      pdf.addImage(
+        imgData, 
+        'JPEG', 
+        xPos,
+        position + 10, 
+        imgWidth,
+        imgHeight,
+        '', 
+        'FAST'
+      );
+      
+      heightLeft -= (pdfHeight - 20);
+      
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
         pdf.addImage(
-          canvas.toDataURL('image/jpeg', 1.0), 
+          imgData, 
           'JPEG', 
-          10,
-          10,
-          imgWidth - 20,
-          contentHeight,
+          xPos,
+          position + 10, 
+          imgWidth, 
+          imgHeight,
           '', 
           'FAST'
         );
-        
-        return startPos + contentHeight;
-      };
-      
-      position = addCanvasPage(position);
-      
-      while (position < imgHeight) {
-        pdf.addPage();
-        position = addCanvasPage(position);
+        heightLeft -= (pdfHeight - 20);
       }
       
       pdf.save(`${note.title || 'note'}.pdf`);
@@ -787,12 +824,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         ipc.openExternal(url);
       }
       
-      // Move cursor after the link box
       setTimeout(() => {
         const range = document.createRange();
         const selection = window.getSelection();
         
-        // Find the next node after the link box
         if (linkBox.nextSibling) {
           range.setStartAfter(linkBox);
           range.collapse(true);
@@ -802,7 +837,6 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
             selection.addRange(range);
           }
         } else if (linkBox.parentNode) {
-          // If no next sibling, append a new line and place cursor there
           const br = document.createElement('br');
           linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
           
@@ -859,7 +893,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   
     if (savedRange) {
       const isRangeInEditor = editorRef.current.contains(savedRange.commonAncestorContainer);
-      if (!isRangeInEditor) return; // Ensure the range is within the current editor
+      if (!isRangeInEditor) return; 
   
       savedRange.deleteContents();
       savedRange.insertNode(linkBox);
