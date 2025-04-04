@@ -786,6 +786,35 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
       if (url) {
         ipc.openExternal(url);
       }
+      
+      // Move cursor after the link box
+      setTimeout(() => {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        // Find the next node after the link box
+        if (linkBox.nextSibling) {
+          range.setStartAfter(linkBox);
+          range.collapse(true);
+          
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        } else if (linkBox.parentNode) {
+          // If no next sibling, append a new line and place cursor there
+          const br = document.createElement('br');
+          linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
+          
+          range.setStartAfter(br);
+          range.collapse(true);
+          
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+      }, 0);
     }
   }, []);
 
