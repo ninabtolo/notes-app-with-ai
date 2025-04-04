@@ -5,8 +5,8 @@
 [contenteditable] u,
 [contenteditable] span[style*="text-decoration: underline"],
 [contenteditable] span[style*="text-decoration:underline"] {
-  text-decoration-color: inherit;
   -webkit-text-decoration-color: inherit;
+  text-decoration-color: inherit;
 }
 
 .custom-scrollbar::-webkit-scrollbar,
@@ -40,6 +40,7 @@
 .custom-scrollbar,
 .editor-container div[contenteditable],
 .overflow-y-auto {
+  -ms-overflow-style: auto; /* For Internet Explorer */
   scrollbar-width: thin;
   scrollbar-color: rgba(156, 163, 175, 0.5) rgba(241, 245, 249, 0.5);
 }
@@ -162,6 +163,7 @@
   overflow-wrap: break-word;
   word-break: break-all; /* Force break for very long words */
   white-space: pre-wrap;
+  -webkit-hyphens: auto;
   hyphens: auto;
 }
 
@@ -219,13 +221,14 @@ button[aria-label="Fechar chat"] {
   overflow: hidden !important;
   cursor: ns-resize !important;
   margin-bottom: 1rem !important;
+  -webkit-user-select: none !important;
   user-select: none !important;
   touch-action: none !important;
 }
 
 .cover-adjusting-container * {
-  user-select: none !important;
   -webkit-user-select: none !important;
+  user-select: none !important;
 }
 
 .cover-adjusting-container img {
@@ -286,6 +289,7 @@ button[aria-label="Fechar chat"] {
   display: flex;
   align-items: flex-start;
   justify-content: center;
+  -webkit-user-select: none;
   user-select: none;
   pointer-events: auto !important;
   cursor: ns-resize !important;
@@ -360,18 +364,19 @@ button:focus {
 .editor-container .link-box {
   background-color: #fcfaff;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  padding: 16px;
-  margin: 16px 0;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  padding: 4px 8px;
+  margin: 10px; 
   cursor: pointer !important;
   border-left: 4px solid #a78bfa;
   transition: all 0.2s ease;
-  width: calc(100% - 16px);
-  display: block;
-  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   box-sizing: border-box;
+  -webkit-user-select: none;
   user-select: none;
-  max-width: 100%;
   overflow: hidden;
   z-index: 1;
 }
@@ -390,21 +395,19 @@ button:focus {
 .editor-container .link-title {
   font-weight: 600;
   font-size: 16px;
-  margin-bottom: 4px;
+  margin-top: 5px;
+  margin-bottom: 8px;
   color: #4c1d95;
   word-break: break-word;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .editor-container .link-url {
-  font-size: 13px;
+  font-size: 14px;
   color: #6b7280;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  white-space: nowrap;
+  margin-bottom: 5px;
 }
 
 .editor-container .link-icon {
@@ -443,6 +446,7 @@ button:focus {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  user-select: none;
 }
 
 span[data-empty-highlight="true"] {
@@ -458,4 +462,10 @@ span[data-empty-highlight="true"]::after {
   right: 0;
   top: 0;
   bottom: 0;
+}
+
+[contenteditable][data-placeholder]:empty:before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  cursor: text;
 }

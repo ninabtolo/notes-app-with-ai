@@ -7,10 +7,13 @@ interface ElectronAPI {
   };
 }
 
+interface LegacyElectronAPI {
+  loadNotes: () => Promise<any>;
+  saveNotes: (notes: any) => Promise<any>;
+}
+
 interface Window {
-  electron?: ElectronAPI;
-  electronAPI?: {
-    loadNotes: () => Promise<any>;
-    saveNotes: (notes: any) => Promise<any>;
-  };
+  electron: ElectronAPI | undefined;
+  electronAPI: LegacyElectronAPI | undefined;
+  openExternalLink?: (url: string) => boolean;
 }

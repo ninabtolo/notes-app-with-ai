@@ -9,15 +9,9 @@ import { generateSuggestion } from '../gemini';
 import debounce from 'lodash.debounce';
 import { ipc } from '../utils/ipc';
 
+// Define window interface extensions
 declare global {
   interface Window {
-    electron?: {
-      ipcRenderer: {
-        send: (channel: string, data: any) => void;
-        invoke: (channel: string, data: any) => Promise<any>;
-        on: (channel: string, func: (...args: any[]) => void) => void;
-      };
-    };
     openExternalLink?: (url: string) => boolean;
   }
 }
@@ -48,16 +42,16 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   const [linkUrl, setLinkUrl] = useState<string>('');
   const [linkTitle, setLinkTitle] = useState<string>('');
   const linkFormRef = useRef<HTMLDivElement>(null);
-  const [isCropping, setIsCropping] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [isAdjustingCover, setIsAdjustingCover] = useState(false);
-  const [dragStartY, setDragStartY] = useState(0);
   const [imageOffsetY, setImageOffsetY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const dragStartYRef = useRef<number>(0);
   const [chatClosing, setChatClosing] = useState<boolean>(false);
   const [chatEntering, setChatEntering] = useState<boolean>(false);
+
+  // Removed unused variables: isCropping, setIsCropping, dragStartY
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -82,7 +76,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   };
 
   const handleContentChange = () => {
-    if (editorRef.current) {
+    if (editorRef.current && note) {
       onUpdateNote({
         ...note,
         content: editorRef.current.innerHTML,
@@ -153,8 +147,11 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           if (!node.textContent?.trim()) {
             const content = node.textContent || '';
             const textNode = document.createTextNode(content);
-            parent.parentNode?.insertBefore(textNode, parent);
-            parent.parentNode?.removeChild(parent);
+            const parentNode = parent.parentNode;
+            if (parentNode) {
+              parentNode.insertBefore(textNode, parent);
+              parentNode.removeChild(parent);
+            }
             
             const newRange = document.createRange();
             newRange.setStart(textNode, content.length);
@@ -167,8 +164,11 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         } else if (parent.style.backgroundColor && !node.textContent?.trim()) {
           const content = node.textContent || '';
           const textNode = document.createTextNode(content);
-          parent.parentNode?.insertBefore(textNode, parent);
-          parent.parentNode?.removeChild(parent);
+          const parentNode = parent.parentNode;
+          if (parentNode) {
+            parentNode.insertBefore(textNode, parent);
+            parentNode.removeChild(parent);
+          }
           
           const newRange = document.createRange();
           newRange.setStart(textNode, content.length);
@@ -217,8 +217,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     emptySpans.forEach(span => {
       const textContent = span.textContent || '';
       const text = document.createTextNode(textContent);
-      span.parentNode?.insertBefore(text, span);
-      span.parentNode?.removeChild(span);
+      if (span.parentNode) {
+        span.parentNode.insertBefore(text, span);
+        span.parentNode.removeChild(span);
+      }
     });
   };
 
@@ -267,6 +269,8 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   }, [note?.id]);
 
   const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!note) return;
+    
     onUpdateNote({
       ...note,
       title: e.target.value,
@@ -275,25 +279,28 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   };
 
   const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImageToCrop(reader.result as string);
-        onUpdateNote({
-          ...note,
-          coverImage: reader.result as string,
-          updatedAt: new Date().toISOString(),
-        });
-        setTimeout(() => {
-          setIsAdjustingCover(true);
-        }, 100);
-      };
-      reader.readAsDataURL(e.target.files[0]);
-    }
+    if (!note || !e.target.files || !e.target.files[0]) return;
+    
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!reader.result || !note) return;
+      
+      const imageResult = reader.result as string;
+      setImageToCrop(imageResult);
+      onUpdateNote({
+        ...note,
+        coverImage: imageResult,
+        updatedAt: new Date().toISOString(),
+      });
+      setTimeout(() => {
+        setIsAdjustingCover(true);
+      }, 100);
+    };
+    reader.readAsDataURL(e.target.files[0]);
   };
 
   const saveAdjustedCover = () => {
-    if (!imageToCrop || !imageRef.current) {
+    if (!imageToCrop || !imageRef.current || !note) {
       setIsAdjustingCover(false);
       return;
     }
@@ -304,6 +311,8 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
       img.onload = () => {
         try {
+          if (!imageRef.current || !note) return;
+          
           const containerHeight = 192;
           const imageHeight = imageRef.current.clientHeight;
           const scaleY = img.naturalHeight / imageHeight;
@@ -378,7 +387,6 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
     e.stopPropagation();
     
     dragStartYRef.current = e.clientY;
-    setDragStartY(e.clientY);
     setIsDragging(true);
   };
 
@@ -602,7 +610,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
       const pdf = new jsPDF('p', 'mm', 'a4');
       let position = 0;
       
-      const addCanvasPage = (startPos) => {
+      const addCanvasPage = (startPos: number): number => {
         const contentHeight = Math.min(imgHeight - startPos, pageHeight - 20);
         
         pdf.addImage(
@@ -613,9 +621,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           imgWidth - 20,
           contentHeight,
           '', 
-          'FAST',
-          0,
-          -startPos * (imgWidth - 20) / imgHeight
+          'FAST'
         );
         
         return startPos + contentHeight;
@@ -752,7 +758,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
         editorRef.current.removeEventListener('keydown', handleKeyDown);
       }
     };
-  }, [showSuggestion, suggestion, acceptSuggestion, rejectSuggestion, handleContentChange]);
+  }, [showSuggestion, suggestion]);
 
   useEffect(() => {
     window.openExternalLink = (url: string) => {
@@ -799,98 +805,59 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
   }, [handleLinkClick]);
 
   const insertLink = () => {
-    if (!linkUrl.trim() || !linkTitle.trim()) return;
-    
+    if (!linkUrl.trim() || !linkTitle.trim() || !editorRef.current) return;
+  
+    // Format URL properly
     let formattedUrl = linkUrl.trim();
     if (!/^https?:\/\//i.test(formattedUrl)) {
       formattedUrl = 'https://' + formattedUrl;
     }
-    
-    if (editorRef.current) {
-      editorRef.current.focus();
-    }
-    
+  
+    editorRef.current.focus();
     restoreSelection();
-    
-    const linkId = `link-${Date.now()}`;
+  
     const linkBox = document.createElement('div');
     linkBox.className = 'link-box';
-    linkBox.id = linkId;
     linkBox.setAttribute('data-url', formattedUrl);
     linkBox.setAttribute('role', 'button');
     linkBox.setAttribute('tabindex', '0');
     linkBox.setAttribute('title', `Abrir ${formattedUrl}`);
-    
     linkBox.setAttribute('onclick', `return window.openExternalLink('${formattedUrl.replace(/'/g, "\\'")}')`);
-    
     linkBox.innerHTML = `
-      <div class="link-title">
-        ${linkTitle}
-      </div>
+      <div class="link-title">${linkTitle}</div>
       <div class="link-url">${formattedUrl}</div>
     `;
-    
-    if (savedRange && editorRef.current) {
-      try {
-        let isRangeInEditor = false;
-        let node = savedRange.commonAncestorContainer;
-        while (node) {
-          if (node === editorRef.current) {
-            isRangeInEditor = true;
-            break;
-          }
-          node = node.parentNode;
-        }
-        
-        if (!isRangeInEditor) {
-          const range = document.createRange();
-          range.selectNodeContents(editorRef.current);
-          range.collapse(false);
-          savedRange = range;
-          
-          const selection = window.getSelection();
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-        }
-        
-        savedRange.deleteContents();
-        savedRange.insertNode(linkBox);
-        
-        const br = document.createElement('br');
-        if (linkBox.parentNode) {
-          linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
-        }
-        
-        const range = document.createRange();
-        range.setStartAfter(br);
-        range.collapse(true);
-        
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      } catch (error) {
-        editorRef.current.appendChild(linkBox);
-        editorRef.current.appendChild(document.createElement('br'));
-      }
-    } else if (editorRef.current) {
+  
+    if (savedRange) {
+      const isRangeInEditor = editorRef.current.contains(savedRange.commonAncestorContainer);
+      if (!isRangeInEditor) return; // Ensure the range is within the current editor
+  
+      savedRange.deleteContents();
+      savedRange.insertNode(linkBox);
+  
+      const br = document.createElement('br');
+      linkBox.parentNode?.insertBefore(br, linkBox.nextSibling);
+  
+      const range = document.createRange();
+      range.setStartAfter(br);
+      range.collapse(true);
+  
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else {
       editorRef.current.appendChild(linkBox);
       editorRef.current.appendChild(document.createElement('br'));
-      
+  
       const range = document.createRange();
       range.selectNodeContents(editorRef.current);
       range.collapse(false);
-      
+  
       const selection = window.getSelection();
-      if (selection) {
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
+      selection?.removeAllRanges();
+      selection?.addRange(range);
     }
-    
+  
     setLinkUrl('');
     setLinkTitle('');
     setShowLinkForm(false);
@@ -956,7 +923,7 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
                   <div className="image-container">
                     <img
                       ref={imageRef}
-                      src={imageToCrop}
+                      src={imageToCrop || undefined}
                       style={{ transform: `translateY(${imageOffsetY}px)` }}
                       className="w-full max-w-full h-auto object-cover"
                       alt="Adjusting cover"
@@ -1211,10 +1178,10 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
           <div className="editor-container flex-1">
             <div
               ref={editorRef}
-              contentEditable
+              contentEditable={true}
               onInput={handleContentChange}
               className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
-              placeholder="Start writing your note..."
+              data-placeholder="Start writing your note..."
             />
 
             {showSuggestion && suggestion && suggestionPosition && (
