@@ -1,18 +1,18 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
-import path, { dirname, join } from "path";
-import require$$0 from "fs";
+import require$$0, { dirname, join } from "path";
+import require$$0$1 from "fs";
 import require$$2 from "events";
-import require$$0$1 from "util";
+import require$$0$2 from "util";
 import { fileURLToPath } from "url";
 function getDefaultExportFromCjs(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
 var sqlite3$1 = { exports: {} };
-function commonjsRequire(path2) {
-  throw new Error('Could not dynamically require "' + path2 + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
+function commonjsRequire(path) {
+  throw new Error('Could not dynamically require "' + path + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
 }
 var bindings = { exports: {} };
-var sep = path.sep || "/";
+var sep = require$$0.sep || "/";
 var fileUriToPath_1 = fileUriToPath;
 function fileUriToPath(uri) {
   if ("string" != typeof uri || uri.length <= 7 || "file://" != uri.substring(0, 7)) {
@@ -21,30 +21,30 @@ function fileUriToPath(uri) {
   var rest = decodeURI(uri.substring(7));
   var firstSlash = rest.indexOf("/");
   var host = rest.substring(0, firstSlash);
-  var path2 = rest.substring(firstSlash + 1);
+  var path = rest.substring(firstSlash + 1);
   if ("localhost" == host) host = "";
   if (host) {
     host = sep + sep + host;
   }
-  path2 = path2.replace(/^(.+)\|/, "$1:");
+  path = path.replace(/^(.+)\|/, "$1:");
   if (sep == "\\") {
-    path2 = path2.replace(/\//g, "\\");
+    path = path.replace(/\//g, "\\");
   }
-  if (/^.+\:/.test(path2)) ;
+  if (/^.+\:/.test(path)) ;
   else {
-    path2 = sep + path2;
+    path = sep + path;
   }
-  return host + path2;
+  return host + path;
 }
 (function(module, exports) {
-  var fs = require$$0, path$1 = path, fileURLToPath2 = fileUriToPath_1, join2 = path$1.join, dirname2 = path$1.dirname, exists = fs.accessSync && function(path2) {
+  var fs = require$$0$1, path = require$$0, fileURLToPath2 = fileUriToPath_1, join2 = path.join, dirname2 = path.dirname, exists = fs.accessSync && function(path2) {
     try {
       fs.accessSync(path2);
     } catch (e) {
       return false;
     }
     return true;
-  } || fs.existsSync || path$1.existsSync, defaults = {
+  } || fs.existsSync || path.existsSync, defaults = {
     arrow: process.env.NODE_BINDINGS_ARROW || " → ",
     compiled: process.env.NODE_BINDINGS_COMPILED_DIR || "compiled",
     platform: process.platform,
@@ -88,7 +88,7 @@ function fileUriToPath(uri) {
     if (!opts.module_root) {
       opts.module_root = exports.getRoot(exports.getFileName());
     }
-    if (path$1.extname(opts.bindings) != ".node") {
+    if (path.extname(opts.bindings) != ".node") {
       opts.bindings += ".node";
     }
     var requireFunc = typeof __webpack_require__ === "function" ? __non_webpack_require__ : commonjsRequire;
@@ -175,7 +175,7 @@ var hasRequiredTrace;
 function requireTrace() {
   if (hasRequiredTrace) return trace;
   hasRequiredTrace = 1;
-  const util = require$$0$1;
+  const util = require$$0$2;
   function extendTrace(object, property, pos) {
     const old = object[property];
     object[property] = function() {
@@ -210,7 +210,7 @@ function requireTrace() {
   return trace;
 }
 (function(module, exports) {
-  const path$1 = path;
+  const path = require$$0;
   const sqlite32 = sqlite3Binding;
   const EventEmitter = require$$2.EventEmitter;
   module.exports = sqlite32;
@@ -240,7 +240,7 @@ function requireTrace() {
         return new Database(file, a, b);
       }
       let db2;
-      file = path$1.resolve(file);
+      file = path.resolve(file);
       if (!sqlite32.cached.objects[file]) {
         db2 = sqlite32.cached.objects[file] = new Database(file, a, b);
       } else {
@@ -385,6 +385,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error("Erro ao abrir o banco de dados:", err);
   } else {
+    console.log("Banco de dados SQLite aberto com sucesso!");
     db.run(`CREATE TABLE IF NOT EXISTS notes (
       id TEXT PRIMARY KEY,
       title TEXT,
@@ -403,6 +404,7 @@ const migrateDatabase = () => {
       }
       const columns = rows.map((row) => row.name);
       if (!columns.includes("coverImage")) {
+        console.log("Migrating database to add coverImage column...");
         db.run("ALTER TABLE notes RENAME TO notes_old", (err2) => {
           if (err2) {
             console.error("Erro ao renomear a tabela notes:", err2);
@@ -432,6 +434,8 @@ const migrateDatabase = () => {
                   db.run("DROP TABLE notes_old", (err5) => {
                     if (err5) {
                       console.error("Erro ao excluir a tabela antiga notes_old:", err5);
+                    } else {
+                      console.log("Migração concluída com sucesso!");
                     }
                   });
                 }
@@ -439,6 +443,8 @@ const migrateDatabase = () => {
             }
           );
         });
+      } else {
+        console.log("A tabela notes já está atualizada.");
       }
     });
   });
@@ -454,142 +460,118 @@ db.serialize(() => {
     if (err) {
       console.error("Error loading deleted note IDs:", err);
     } else {
+      console.log(`Loaded ${rows.length} deleted note IDs`);
       rows.forEach((row) => deletedNoteIds.add(row.id));
     }
   });
 });
 let mainWindow;
-function createWindow() {
+app.whenReady().then(() => {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 700,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js")
+      preload: require$$0.join(__dirname, "preload.js")
     },
-    icon: path.join(__dirname, "assets", "notes7.ico")
+    icon: require$$0.join(__dirname, "assets", "notes7.ico")
   });
-  const isDev = process.env.NODE_ENV === "development";
-  if (isDev) {
-    mainWindow.loadURL("http://localhost:5173");
-  } else {
-    mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
-  }
-}
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-ipcMain.on("open-external-link", (_, url) => {
-  if (!url || typeof url !== "string") return;
-  try {
-    const urlObj = new URL(url);
-    if (urlObj.protocol === "http:" || urlObj.protocol === "https:") {
-      shell.openExternal(url).catch((error) => {
-        console.error("Failed to open URL in external browser:", error);
+  mainWindow.loadURL("http://localhost:5173");
+  ipcMain.on("open-external-link", (_, url) => {
+    console.log(`Opening external URL in default browser: ${url}`);
+    shell.openExternal(url).catch((error) => {
+      console.error("Failed to open URL in external browser:", error);
+    });
+  });
+  ipcMain.handle("load-notes", async () => {
+    return new Promise((resolve, reject) => {
+      db.all("SELECT * FROM notes", [], (err, rows) => {
+        if (err) {
+          console.error("Erro ao carregar as notas:", err);
+          reject(err);
+        } else {
+          const filteredRows = rows.filter((note) => !deletedNoteIds.has(note.id));
+          resolve(filteredRows);
+        }
       });
-    } else {
-      console.warn(`Blocked attempt to open URL with disallowed protocol: ${urlObj.protocol}`);
-    }
-  } catch (error) {
-    console.error("Invalid URL format:", error);
-  }
-});
-ipcMain.handle("load-notes", async () => {
-  return new Promise((resolve, reject) => {
-    db.all("SELECT * FROM notes", [], (err, rows) => {
+    });
+  });
+  ipcMain.on("save-notes", (_, notes) => {
+    const stmt = db.prepare("INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)");
+    notes.forEach((note) => {
+      const updatedAt = note.updatedAt instanceof Date ? note.updatedAt.toISOString() : typeof note.updatedAt === "string" ? note.updatedAt : (/* @__PURE__ */ new Date()).toISOString();
+      stmt.run(note.id, note.title, note.content, updatedAt, note.coverImage || null);
+    });
+    stmt.finalize((err) => {
       if (err) {
-        console.error("Erro ao carregar as notas:", err);
-        reject(err);
-      } else {
-        const filteredRows = rows.filter((note) => !deletedNoteIds.has(note.id));
-        resolve(filteredRows);
+        console.error("Erro ao finalizar a inserção das notas:", err);
       }
     });
   });
-});
-ipcMain.on("save-notes", (_, notes) => {
-  const stmt = db.prepare("INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)");
-  notes.forEach((note) => {
+  ipcMain.on("save-note", (_, note) => {
+    const stmt = db.prepare("INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)");
     const updatedAt = note.updatedAt instanceof Date ? note.updatedAt.toISOString() : typeof note.updatedAt === "string" ? note.updatedAt : (/* @__PURE__ */ new Date()).toISOString();
     stmt.run(note.id, note.title, note.content, updatedAt, note.coverImage || null);
-  });
-  stmt.finalize((err) => {
-    if (err) {
-      console.error("Erro ao finalizar a inserção das notas:", err);
-    }
-  });
-});
-ipcMain.on("save-note", (_, note) => {
-  const stmt = db.prepare("INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)");
-  const updatedAt = note.updatedAt instanceof Date ? note.updatedAt.toISOString() : typeof note.updatedAt === "string" ? note.updatedAt : (/* @__PURE__ */ new Date()).toISOString();
-  stmt.run(note.id, note.title, note.content, updatedAt, note.coverImage || null);
-  stmt.finalize((err) => {
-    if (err) {
-      console.error("Error finalizing note save:", err);
-    }
-  });
-});
-ipcMain.handle("save-note-sync", async (_, note) => {
-  return new Promise((resolve, reject) => {
-    const updatedAt = note.updatedAt instanceof Date ? note.updatedAt.toISOString() : typeof note.updatedAt === "string" ? note.updatedAt : (/* @__PURE__ */ new Date()).toISOString();
-    db.run(
-      "INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)",
-      [note.id, note.title, note.content, updatedAt, note.coverImage || null],
-      function(err) {
-        if (err) {
-          console.error("Error saving note:", err);
-          reject(err);
-        } else {
-          resolve(true);
-        }
+    stmt.finalize((err) => {
+      if (err) {
+        console.error("Error finalizing note save:", err);
       }
-    );
+    });
   });
-});
-setInterval(() => {
-  db.all("SELECT * FROM notes", [], (err, rows) => {
-    if (err) {
-      console.error("Erro ao carregar as notas para salvar:", err);
-    } else {
-      const filteredRows = rows.filter((note) => !deletedNoteIds.has(note.id));
-      const noteIdsToDelete = rows.filter((note) => deletedNoteIds.has(note.id)).map((note) => note.id);
-      if (noteIdsToDelete.length > 0) {
-        noteIdsToDelete.forEach((id) => {
-          db.run("DELETE FROM notes WHERE id = ?", [id]);
-        });
-      }
-      ipcMain.emit("save-notes", [], filteredRows);
-    }
-  });
-}, 1e4);
-ipcMain.on("delete-note", (_, id) => {
-  db.run("DELETE FROM notes WHERE id = ?", [id], function(err) {
-    if (err) {
-      console.error("Erro ao excluir nota:", err);
-      return;
-    }
-    db.run(
-      "INSERT OR REPLACE INTO deleted_notes (id, deletedAt) VALUES (?, ?)",
-      [id, (/* @__PURE__ */ new Date()).toISOString()],
-      function(err2) {
-        if (err2) {
-          console.error("Error tracking deleted note ID:", err2);
-        } else {
-          deletedNoteIds.add(id);
-          if (mainWindow) {
-            mainWindow.webContents.send("note-deleted", id);
+  ipcMain.handle("save-note-sync", async (_, note) => {
+    return new Promise((resolve, reject) => {
+      const updatedAt = note.updatedAt instanceof Date ? note.updatedAt.toISOString() : typeof note.updatedAt === "string" ? note.updatedAt : (/* @__PURE__ */ new Date()).toISOString();
+      db.run(
+        "INSERT OR REPLACE INTO notes (id, title, content, updatedAt, coverImage) VALUES (?, ?, ?, ?, ?)",
+        [note.id, note.title, note.content, updatedAt, note.coverImage || null],
+        function(err) {
+          if (err) {
+            console.error("Error saving note:", err);
+            reject(err);
+          } else {
+            resolve(true);
           }
         }
+      );
+    });
+  });
+  setInterval(() => {
+    db.all("SELECT * FROM notes", [], (err, rows) => {
+      if (err) {
+        console.error("Erro ao carregar as notas para salvar:", err);
+      } else {
+        const filteredRows = rows.filter((note) => !deletedNoteIds.has(note.id));
+        const noteIdsToDelete = rows.filter((note) => deletedNoteIds.has(note.id)).map((note) => note.id);
+        if (noteIdsToDelete.length > 0) {
+          noteIdsToDelete.forEach((id) => {
+            db.run("DELETE FROM notes WHERE id = ?", [id]);
+          });
+        }
+        ipcMain.emit("save-notes", [], filteredRows);
       }
-    );
+    });
+  }, 1e4);
+  ipcMain.on("delete-note", (_, id) => {
+    db.run("DELETE FROM notes WHERE id = ?", [id], function(err) {
+      if (err) {
+        console.error("Erro ao excluir nota:", err);
+        return;
+      }
+      db.run(
+        "INSERT OR REPLACE INTO deleted_notes (id, deletedAt) VALUES (?, ?)",
+        [id, (/* @__PURE__ */ new Date()).toISOString()],
+        function(err2) {
+          if (err2) {
+            console.error("Error tracking deleted note ID:", err2);
+          } else {
+            deletedNoteIds.add(id);
+            if (mainWindow) {
+              mainWindow.webContents.send("note-deleted", id);
+            }
+          }
+        }
+      );
+    });
   });
 });
