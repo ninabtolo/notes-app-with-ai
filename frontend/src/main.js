@@ -7,7 +7,7 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const dbPath = join(app.getPath('userData'), 'notesapp2.db');
+const dbPath = join(app.getPath('userData'), 'notesapp10.db');
 
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {

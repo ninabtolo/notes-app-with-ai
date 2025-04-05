@@ -99,6 +99,7 @@ function App() {
         <Editor
           note={activeNote}
           onUpdateNote={handleUpdateNote}
+          allNotes={notes} 
         />
       </div>
     </>

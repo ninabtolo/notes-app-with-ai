@@ -469,3 +469,55 @@ span[data-empty-highlight="true"]::after {
 .link-box::selection {
   background: transparent;
 }
+
+.attached-note {
+  background-color: rgba(167, 139, 250, 0.1);
+  border-left: 3px solid #a78bfa;
+  padding: 8px 12px;
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 12px;
+}
+
+.command-suggestion {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.command-suggestion:hover {
+  background-color: #f3f4f6;
+}
+
+.command-suggestion:last-child {
+  border-bottom: none;
+}
+
+.note-selection-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.note-selection-item:hover {
+  background-color: #f9fafb;
+}
+
+.note-selection-item.selected {
+  background-color: #f3f0ff;
+}
+
+.note-selection-item .icon {
+  margin-right: 8px;
+  color: #7c3aed;
+}
+
+.note-selection-item .title {
+  flex-grow: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

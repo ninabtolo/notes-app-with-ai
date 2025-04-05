@@ -18,9 +18,10 @@ declare global {
 interface EditorProps {
   note: Note | null;
   onUpdateNote: (note: Note) => void;
+  allNotes: Note[];
 }
 
-export function Editor({ note, onUpdateNote }: EditorProps) {
+export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [dropdown, setDropdown] = useState<string | null>(null);
@@ -1292,15 +1293,19 @@ export function Editor({ note, onUpdateNote }: EditorProps) {
 
         {showGeminiChat && (
           <div className={`chat-container ${chatEntering ? 'entering' : ''} ${chatClosing ? 'closing' : ''}`}>
-            <GeminiChat onClose={() => {
-              console.log("Closing chat");
-              setChatClosing(true);
-              setChatEntering(false);
-              setTimeout(() => {
-                setShowGeminiChat(false);
-                setChatClosing(false);
-              }, 300);
-            }} />
+            <GeminiChat 
+              onClose={() => {
+                console.log("Closing chat");
+                setChatClosing(true);
+                setChatEntering(false);
+                setTimeout(() => {
+                  setShowGeminiChat(false);
+                  setChatClosing(false);
+                }, 300);
+              }} 
+              currentNote={note}
+              allNotes={allNotes}
+            />
           </div>
         )}
       </div>

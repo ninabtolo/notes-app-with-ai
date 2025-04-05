@@ -380,7 +380,7 @@ var sqlite3Exports = sqlite3$1.exports;
 const sqlite3 = /* @__PURE__ */ getDefaultExportFromCjs(sqlite3Exports);
 const __filename$1 = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename$1);
-const dbPath = join(app.getPath("userData"), "notesapp2.db");
+const dbPath = join(app.getPath("userData"), "notesapp10.db");
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error("Erro ao abrir o banco de dados:", err);
