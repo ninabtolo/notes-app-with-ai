@@ -1,19 +1,16 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Note } from '../types';
-import { Type, Palette, Download, Bold, Highlighter, MessageSquare, Check, X, Lightbulb, Settings, Image, Save, XCircle, Link } from 'lucide-react'; 
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import './Editor.css';
-import GeminiChat from './GeminiChat';
+import GeminiChat from './editor/GeminiChat';
 import { generateSuggestion } from '../gemini';
 import debounce from 'lodash.debounce';
 import { ipc } from '../utils/ipc';
-
-declare global {
-  interface Window {
-    openExternalLink?: (url: string) => boolean;
-  }
-}
+import CoverImageSection from './editor/CoverImageSection';
+import EditorHeader from './editor/EditorHeader';
+import EditorToolbar from './editor/EditorToolbar';
+import ContentEditor from './editor/ContentEditor';
 
 interface EditorProps {
   note: Note | null;
@@ -51,7 +48,17 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
   const [chatClosing, setChatClosing] = useState<boolean>(false);
   const [chatEntering, setChatEntering] = useState<boolean>(false);
 
-  // Removed unused variables: isCropping, setIsCropping, dragStartY
+  useEffect(() => {
+    window.openExternalLink = (url: string) => {
+      console.log('Opening external link from onclick:', url);
+      ipc.openExternal(url);
+      return false;
+    };
+    
+    return () => {
+      delete window.openExternalLink;
+    };
+  }, []);
 
   const toggleDropdown = (type: string) => {
     if (dropdown === type) {
@@ -130,152 +137,6 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
     
     handleContentChange();
     setDropdown(null);
-  };
-
-  useEffect(() => {
-    const handleInput = (e: Event) => {
-      const selection = window.getSelection();
-      if (!selection || selection.rangeCount === 0) return;
-      
-      const range = selection.getRangeAt(0);
-      const node = range.startContainer;
-      
-      if (node.nodeType === Node.TEXT_NODE && node.parentElement) {
-        const parent = node.parentElement;
-        
-        if (parent.hasAttribute('data-empty-highlight')) {
-          if (!node.textContent?.trim()) {
-            const content = node.textContent || '';
-            const textNode = document.createTextNode(content);
-            const parentNode = parent.parentNode;
-            if (parentNode) {
-              parentNode.insertBefore(textNode, parent);
-              parentNode.removeChild(parent);
-            }
-            
-            const newRange = document.createRange();
-            newRange.setStart(textNode, content.length);
-            newRange.setEnd(textNode, content.length);
-            selection.removeAllRanges();
-            selection.addRange(newRange);
-          } else {
-            parent.removeAttribute('data-empty-highlight');
-          }
-        } else if (parent.style.backgroundColor && !node.textContent?.trim()) {
-          const content = node.textContent || '';
-          const textNode = document.createTextNode(content);
-          const parentNode = parent.parentNode;
-          if (parentNode) {
-            parentNode.insertBefore(textNode, parent);
-            parentNode.removeChild(parent);
-          }
-          
-          const newRange = document.createRange();
-          newRange.setStart(textNode, content.length);
-          newRange.setEnd(textNode, content.length);
-          selection.removeAllRanges();
-          selection.addRange(newRange);
-        }
-      }
-    };
-    
-    if (editorRef.current) {
-      editorRef.current.addEventListener('input', handleInput);
-    }
-    
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.removeEventListener('input', handleInput);
-      }
-    };
-  }, []);
-
-  const cleanupEmptyHighlights = (container: HTMLElement | null) => {
-    if (!container) return;
-    
-    const emptySpans = Array.from(container.querySelectorAll('span[style*="background-color"]'))
-      .filter(span => {
-        if (span.hasAttribute('data-empty-highlight')) {
-          return true;
-        }
-        
-        const hasOnlyWhitespace = !span.textContent?.trim();
-        
-        if (hasOnlyWhitespace) {
-          const prev = span.previousSibling;
-          const next = span.nextSibling;
-          
-          const prevHasContent = prev && prev.textContent && prev.textContent.trim() !== '';
-          const nextHasContent = next && next.textContent && next.textContent.trim() !== '';
-          
-          return !(prevHasContent && nextHasContent);
-        }
-        
-        return false;
-      });
-    
-    emptySpans.forEach(span => {
-      const textContent = span.textContent || '';
-      const text = document.createTextNode(textContent);
-      if (span.parentNode) {
-        span.parentNode.insertBefore(text, span);
-        span.parentNode.removeChild(span);
-      }
-    });
-  };
-
-  useEffect(() => {
-    const handleEditorInput = () => {
-      cleanupEmptyHighlights(editorRef.current);
-      handleContentChange();
-    };
-    
-    if (editorRef.current) {
-      editorRef.current.addEventListener('input', handleEditorInput);
-    }
-    
-    return () => {
-      if (editorRef.current) {
-        editorRef.current.removeEventListener('input', handleEditorInput);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const loadNotes = async () => {
-      try {
-        const notesData = await ipc.invoke('load-notes');
-        setNotes(notesData || []);
-      } catch (error) {
-        console.error('Erro ao carregar notas:', error);
-        setNotes([]);
-      }
-    };
-
-    loadNotes();
-  }, []);
-
-  useEffect(() => {
-    if (note) {
-      onUpdateNote(note);
-      ipc.send('save-notes', notes);
-    }
-  }, [note, notes]);
-
-  useEffect(() => {
-    if (editorRef.current && note) {
-      editorRef.current.innerHTML = note.content;
-    }
-  }, [note?.id]);
-
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!note) return;
-    
-    onUpdateNote({
-      ...note,
-      title: e.target.value,
-      updatedAt: new Date().toISOString(),
-    });
   };
 
   const handleCoverImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -412,20 +273,15 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
     }
   }, [isDragging]);
 
-  useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
-    } else {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!note) return;
+    
+    onUpdateNote({
+      ...note,
+      title: e.target.value,
+      updatedAt: new Date().toISOString(),
+    });
+  };
 
   const calculateCursorPosition = () => {
     if (!editorRef.current) return;
@@ -567,6 +423,93 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
     setShowSuggestion(false);
   };
 
+  const insertLink = () => {
+    if (!linkUrl.trim() || !linkTitle.trim() || !editorRef.current) return;
+  
+    let formattedUrl = linkUrl.trim();
+    if (!/^https?:\/\//i.test(formattedUrl)) {
+      formattedUrl = 'https://' + formattedUrl;
+    }
+  
+    editorRef.current.focus();
+    restoreSelection();
+  
+    const linkBox = document.createElement('div');
+    linkBox.className = 'link-box';
+    linkBox.setAttribute('data-url', formattedUrl);
+    linkBox.setAttribute('role', 'button');
+    linkBox.setAttribute('tabindex', '0');
+    linkBox.setAttribute('title', `Abrir ${formattedUrl}`);
+    linkBox.setAttribute('onclick', `return window.openExternalLink('${formattedUrl.replace(/'/g, "\\'")}')`);
+    linkBox.innerHTML = `
+      <div class="link-title">${linkTitle}</div>
+      <div class="link-url">${formattedUrl}</div>
+    `;
+  
+    if (savedRange) {
+      const isRangeInEditor = editorRef.current.contains(savedRange.commonAncestorContainer);
+      if (!isRangeInEditor) return; 
+  
+      savedRange.deleteContents();
+      savedRange.insertNode(linkBox);
+  
+      const br = document.createElement('br');
+      linkBox.parentNode?.insertBefore(br, linkBox.nextSibling);
+  
+      const range = document.createRange();
+      range.setStartAfter(br);
+      range.collapse(true);
+  
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else {
+      editorRef.current.appendChild(linkBox);
+      editorRef.current.appendChild(document.createElement('br'));
+  
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+  
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+  
+    setLinkUrl('');
+    setLinkTitle('');
+    setShowLinkForm(false);
+    handleContentChange();
+  };
+
+  const toggleSuggestions = () => {
+    setIsSuggestionEnabled(!isSuggestionEnabled);
+    if (isSuggestionEnabled) {
+      setSuggestion('');
+      setShowSuggestion(false);
+    }
+  };
+
+  const toggleSettingsDropdown = () => {
+    setShowSettingsDropdown(!showSettingsDropdown);
+  };
+
+  const toggleChat = () => {
+    if (showGeminiChat) {
+      setChatClosing(true);
+      setChatEntering(false);
+      setTimeout(() => {
+        setShowGeminiChat(false);
+        setChatClosing(false);
+      }, 300);
+    } else {
+      setShowGeminiChat(true);
+      setTimeout(() => {
+        setChatEntering(true);
+      }, 10);
+    }
+  };
+
   const exportToPDF = () => {
     if (!editorRef.current || !note) return;
     
@@ -676,30 +619,89 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
     });
   };
 
-  const toggleSuggestions = () => {
-    setIsSuggestionEnabled(!isSuggestionEnabled);
-    if (isSuggestionEnabled) {
-      setSuggestion('');
-      setShowSuggestion(false);
+  const handleLinkClick = useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const linkBox = target.closest('.link-box');
+    
+    if (linkBox) {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      const url = linkBox.getAttribute('data-url');
+      
+      if (url) {
+        ipc.openExternal(url);
+      }
+      
+      setTimeout(() => {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        if (linkBox.nextSibling) {
+          range.setStartAfter(linkBox);
+          range.collapse(true);
+          
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        } else if (linkBox.parentNode) {
+          const br = document.createElement('br');
+          linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
+          
+          range.setStartAfter(br);
+          range.collapse(true);
+          
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+      }, 0);
     }
-  };
+  }, []);
 
-  const toggleChat = () => {
-    console.log("Toggle chat clicked, current state:", !showGeminiChat);
-    if (showGeminiChat) {
-      setChatClosing(true);
-      setChatEntering(false);
-      setTimeout(() => {
-        setShowGeminiChat(false);
-        setChatClosing(false);
-      }, 300);
-    } else {
-      setShowGeminiChat(true);
-      setTimeout(() => {
-        setChatEntering(true);
-      }, 10);
+  useEffect(() => {
+    const loadNotes = async () => {
+      try {
+        const notesData = await ipc.invoke('load-notes');
+        setNotes(notesData || []);
+      } catch (error) {
+        console.error('Erro ao carregar notas:', error);
+        setNotes([]);
+      }
+    };
+
+    loadNotes();
+  }, []);
+
+  useEffect(() => {
+    if (note) {
+      onUpdateNote(note);
+      ipc.send('save-notes', notes);
     }
-  };
+  }, [note, notes]);
+
+  useEffect(() => {
+    if (editorRef.current && note) {
+      editorRef.current.innerHTML = note.content;
+    }
+  }, [note?.id]);
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   useEffect(() => {
     if (showGeminiChat) {
@@ -708,10 +710,6 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
       }, 10);
     }
   }, [showGeminiChat]);
-
-  const toggleSettingsDropdown = () => {
-    setShowSettingsDropdown(!showSettingsDropdown);
-  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -730,6 +728,37 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    const handleClickOutsideLinkForm = (event: MouseEvent) => {
+      if (
+        linkFormRef.current && 
+        !linkFormRef.current.contains(event.target as Node) &&
+        !(event.target as Element).closest('.add-link-button')
+      ) {
+        setShowLinkForm(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutsideLinkForm);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutsideLinkForm);
+    };
+  }, []);
+
+  useEffect(() => {
+    const editorElement = editorRef.current;
+    if (editorElement) {
+      editorElement.removeEventListener('click', handleLinkClick as any);
+      editorElement.addEventListener('click', handleLinkClick as any);
+    }
+    
+    return () => {
+      if (editorElement) {
+        editorElement.removeEventListener('click', handleLinkClick as any);
+      }
+    };
+  }, [handleLinkClick]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -799,149 +828,53 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
   }, [showSuggestion, suggestion]);
 
   useEffect(() => {
-    window.openExternalLink = (url: string) => {
-      console.log('Opening external link from onclick:', url);
-      ipc.openExternal(url);
-      return false;
-    };
-    
-    return () => {
-      delete window.openExternalLink;
-    };
-  }, []);
-
-  const handleLinkClick = useCallback((e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const linkBox = target.closest('.link-box');
-    
-    if (linkBox) {
-      e.preventDefault();
-      e.stopPropagation();
+    const cleanupEmptyHighlights = (container: HTMLElement | null) => {
+      if (!container) return;
       
-      const url = linkBox.getAttribute('data-url');
-      console.log("📢 Link box clicked via event listener, URL:", url);
-      
-      if (url) {
-        ipc.openExternal(url);
-      }
-      
-      setTimeout(() => {
-        const range = document.createRange();
-        const selection = window.getSelection();
-        
-        if (linkBox.nextSibling) {
-          range.setStartAfter(linkBox);
-          range.collapse(true);
-          
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
+      const emptySpans = Array.from(container.querySelectorAll('span[style*="background-color"]'))
+        .filter(span => {
+          if (span.hasAttribute('data-empty-highlight')) {
+            return true;
           }
-        } else if (linkBox.parentNode) {
-          const br = document.createElement('br');
-          linkBox.parentNode.insertBefore(br, linkBox.nextSibling);
           
-          range.setStartAfter(br);
-          range.collapse(true);
+          const hasOnlyWhitespace = !span.textContent?.trim();
           
-          if (selection) {
-            selection.removeAllRanges();
-            selection.addRange(range);
+          if (hasOnlyWhitespace) {
+            const prev = span.previousSibling;
+            const next = span.nextSibling;
+            
+            const prevHasContent = prev && prev.textContent && prev.textContent.trim() !== '';
+            const nextHasContent = next && next.textContent && next.textContent.trim() !== '';
+            
+            return !(prevHasContent && nextHasContent);
           }
+          
+          return false;
+        });
+      
+      emptySpans.forEach(span => {
+        const textContent = span.textContent || '';
+        const text = document.createTextNode(textContent);
+        if (span.parentNode) {
+          span.parentNode.insertBefore(text, span);
+          span.parentNode.removeChild(span);
         }
-      }, 0);
-    }
-  }, []);
+      });
+    };
 
-  useEffect(() => {
-    const editorElement = editorRef.current;
-    if (editorElement) {
-      editorElement.removeEventListener('click', handleLinkClick as any);
-      editorElement.addEventListener('click', handleLinkClick as any);
-      console.log("📢 Click listener added to editor");
+    const handleEditorInput = () => {
+      cleanupEmptyHighlights(editorRef.current);
+      handleContentChange();
+    };
+    
+    if (editorRef.current) {
+      editorRef.current.addEventListener('input', handleEditorInput);
     }
     
     return () => {
-      if (editorElement) {
-        editorElement.removeEventListener('click', handleLinkClick as any);
+      if (editorRef.current) {
+        editorRef.current.removeEventListener('input', handleEditorInput);
       }
-    };
-  }, [handleLinkClick]);
-
-  const insertLink = () => {
-    if (!linkUrl.trim() || !linkTitle.trim() || !editorRef.current) return;
-  
-    // Format URL properly
-    let formattedUrl = linkUrl.trim();
-    if (!/^https?:\/\//i.test(formattedUrl)) {
-      formattedUrl = 'https://' + formattedUrl;
-    }
-  
-    editorRef.current.focus();
-    restoreSelection();
-  
-    const linkBox = document.createElement('div');
-    linkBox.className = 'link-box';
-    linkBox.setAttribute('data-url', formattedUrl);
-    linkBox.setAttribute('role', 'button');
-    linkBox.setAttribute('tabindex', '0');
-    linkBox.setAttribute('title', `Abrir ${formattedUrl}`);
-    linkBox.setAttribute('onclick', `return window.openExternalLink('${formattedUrl.replace(/'/g, "\\'")}')`);
-    linkBox.innerHTML = `
-      <div class="link-title">${linkTitle}</div>
-      <div class="link-url">${formattedUrl}</div>
-    `;
-  
-    if (savedRange) {
-      const isRangeInEditor = editorRef.current.contains(savedRange.commonAncestorContainer);
-      if (!isRangeInEditor) return; 
-  
-      savedRange.deleteContents();
-      savedRange.insertNode(linkBox);
-  
-      const br = document.createElement('br');
-      linkBox.parentNode?.insertBefore(br, linkBox.nextSibling);
-  
-      const range = document.createRange();
-      range.setStartAfter(br);
-      range.collapse(true);
-  
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    } else {
-      editorRef.current.appendChild(linkBox);
-      editorRef.current.appendChild(document.createElement('br'));
-  
-      const range = document.createRange();
-      range.selectNodeContents(editorRef.current);
-      range.collapse(false);
-  
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
-  
-    setLinkUrl('');
-    setLinkTitle('');
-    setShowLinkForm(false);
-    handleContentChange();
-  };
-
-  useEffect(() => {
-    const handleClickOutsideLinkForm = (event: MouseEvent) => {
-      if (
-        linkFormRef.current && 
-        !linkFormRef.current.contains(event.target as Node) &&
-        !(event.target as Element).closest('.add-link-button')
-      ) {
-        setShowLinkForm(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutsideLinkForm);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideLinkForm);
     };
   }, []);
 
@@ -957,345 +890,62 @@ export function Editor({ note, onUpdateNote, allNotes }: EditorProps) {
     <div className="flex-1 flex relative">
       <div className="flex-1 flex flex-col h-full">
         <div className="flex-1 p-6 space-y-4 editor-main-container no-scrollbar">
-          {note.coverImage && (
-            <div className="mb-4 relative">
-              {isAdjustingCover ? (
-                <div className="cover-adjusting-container">
-                  <div className="cover-crop-controls">
-                    <button 
-                      onClick={saveAdjustedCover}
-                      className="save-crop-btn"
-                      title="Save adjustment"
-                    >
-                      <Save className="w-5 h-5" />
-                    </button>
-                    <button 
-                      onClick={cancelAdjustingCover}
-                      className="cancel-crop-btn"
-                      title="Cancel"
-                    >
-                      <XCircle className="w-5 h-5" />
-                    </button>
-                  </div>
-                  
-                  <div className="drag-instructions">
-                    Drag image up or down to adjust position
-                  </div>
-                  
-                  <div className="drag-overlay" onMouseDown={handleMouseDown} />
-                  
-                  <div className="image-container">
-                    <img
-                      ref={imageRef}
-                      src={imageToCrop || undefined}
-                      style={{ transform: `translateY(${imageOffsetY}px)` }}
-                      className="w-full max-w-full h-auto object-cover"
-                      alt="Adjusting cover"
-                      draggable="false"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <img
-                  src={note.coverImage}
-                  alt="Cover"
-                  className="w-full h-48 object-cover rounded-lg"
-                />
-              )}
-            </div>
-          )}
+          <CoverImageSection
+            coverImage={note.coverImage}
+            isAdjustingCover={isAdjustingCover}
+            imageOffsetY={imageOffsetY}
+            imageToCrop={imageToCrop}
+            imageRef={imageRef}
+            handleMouseDown={handleMouseDown}
+            saveAdjustedCover={saveAdjustedCover}
+            cancelAdjustingCover={cancelAdjustingCover}
+          />
 
-          <div className="flex items-center justify-between">
-            <input
-              type="text"
-              value={note?.title || ''}
-              onChange={handleTitleChange}
-              placeholder="Note title"
-              className="flex-1 text-4xl font-bold focus:outline-none leading-relaxed"
-            />
-            <div className="flex items-center space-x-2 editor-buttons">
-              <div className="relative">
-                <button
-                  ref={settingsButtonRef}
-                  onClick={toggleSettingsDropdown}
-                  className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
-                  title="Settings"
-                >
-                  <Settings className="w-5 h-5" />
-                </button>
-                {showSettingsDropdown && (
-                  <div 
-                    ref={settingsDropdownRef}
-                    className="absolute top-full right-0 mt-2 bg-white shadow-lg rounded p-2 z-20 w-48"
-                  >
-                    <button 
-                      onClick={() => {
-                        toggleSuggestions();
-                        setShowSettingsDropdown(false);
-                      }} 
-                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-gray-100 rounded"
-                    >
-                      <div className="flex items-center space-x-2">
-                        <Lightbulb className="w-4 h-4" />
-                        <span>AI suggestions</span>
-                      </div>
-                      {isSuggestionEnabled && <Check className="w-4 h-4 ml-2 text-black" />}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        exportToPDF();
-                        setShowSettingsDropdown(false);
-                      }} 
-                      className="w-full flex items-center space-x-2 px-4 py-2 hover:bg-gray-100 rounded"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Export PDF</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={toggleChat}
-                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
-                title={showGeminiChat ? "Close AI" : "Open AI"}
-              >
-                <MessageSquare className="w-5 h-5" />
-              </button>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleCoverImageChange}
-                className="hidden"
-                id="cover-image-upload"
-              />
-              <button
-                className="flex items-center justify-center p-2 bg-purple-100 text-gray-700 rounded-full hover:bg-purple-200 transition"
-                title="Upload Cover Image"
-              >
-                <label htmlFor="cover-image-upload" className="cursor-pointer focus:outline-none">
-                  <Image className="w-5 h-5" />
-                </label>
-              </button>
-            </div>
-          </div>
+          <EditorHeader
+            title={note.title || ''}
+            handleTitleChange={handleTitleChange}
+            showSettingsDropdown={showSettingsDropdown}
+            toggleSettingsDropdown={toggleSettingsDropdown}
+            toggleChat={toggleChat}
+            showGeminiChat={showGeminiChat}
+            isSuggestionEnabled={isSuggestionEnabled}
+            toggleSuggestions={toggleSuggestions}
+            exportToPDF={exportToPDF}
+            settingsButtonRef={settingsButtonRef}
+            settingsDropdownRef={settingsDropdownRef}
+            handleCoverImageChange={handleCoverImageChange}
+          />
 
-          <div className="flex items-center space-x-2 py-2 border-b">
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('fontSize')}
-                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-              >
-                <Type className="w-4 h-4" />
-                <span>Font Size</span>
-              </button>
-              {dropdown === 'fontSize' && (
-                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                  <button onClick={() => applyFormatting('fontSize', '2')} className="block px-4 py-2 hover:bg-gray-100">
-                    Small
-                  </button>
-                  <button onClick={() => applyFormatting('fontSize', '3')} className="block px-4 py-2 hover:bg-gray-100">
-                    Normal
-                  </button>
-                  <button onClick={() => applyFormatting('fontSize', '4')} className="block px-4 py-2 hover:bg-gray-100">
-                    Large
-                  </button>
-                  <button onClick={() => applyFormatting('fontSize', '5')} className="block px-4 py-2 hover:bg-gray-100">
-                    Extra L
-                  </button>
-                </div>
-              )}
-            </div>
+          <EditorToolbar
+            dropdown={dropdown}
+            toggleDropdown={toggleDropdown}
+            applyFormatting={applyFormatting}
+            showLinkForm={showLinkForm}
+            setShowLinkForm={setShowLinkForm}
+            linkUrl={linkUrl}
+            setLinkUrl={setLinkUrl}
+            linkTitle={linkTitle}
+            setLinkTitle={setLinkTitle}
+            insertLink={insertLink}
+            linkFormRef={linkFormRef}
+          />
 
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('foreColor')}
-                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-              >
-                <Palette className="w-4 h-4" />
-                <span>Text Color</span>
-              </button>
-              {dropdown === 'foreColor' && (
-                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
-                  <button onClick={() => applyFormatting('foreColor', '#000000')} className="w-6 h-6 bg-black rounded" />
-                  <button onClick={() => applyFormatting('foreColor', '#4c51bf')} className="w-6 h-6 bg-indigo-600 rounded" />
-                  <button onClick={() => applyFormatting('foreColor', '#059669')} className="w-6 h-6 bg-teal-600 rounded" />
-                  <button onClick={() => applyFormatting('foreColor', '#b45309')} className="w-6 h-6 bg-orange-600 rounded" />
-                  <button onClick={() => applyFormatting('foreColor', '#9d174d')} className="w-6 h-6 bg-pink-600 rounded" />
-                </div>
-              )}
-            </div>
-
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('backColor')}
-                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-              >
-                <Highlighter className="w-4 h-4" />
-                <span>Highlight</span>
-              </button>
-              {dropdown === 'backColor' && (
-                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10 flex space-x-2">
-                  <button onClick={() => applyFormatting('backColor', '#a5b4fc')} className="w-6 h-6 bg-[#a5b4fc] rounded" />
-                  <button onClick={() => applyFormatting('backColor', '#6ee7b7')} className="w-6 h-6 bg-[#6ee7b7] rounded" />
-                  <button onClick={() => applyFormatting('backColor', '#fbbf24')} className="w-6 h-6 bg-[#fbbf24] rounded" />
-                  <button onClick={() => applyFormatting('backColor', '#f472b6')} className="w-6 h-6 bg-[#f472b6] rounded" />
-                  <button
-                    onClick={() => applyFormatting('backColor', 'transparent')}
-                    className="w-6 h-6 bg-transparent border-2 border-gray-300 rounded"
-                  />
-                </div>
-              )}
-            </div>
-            <div className="relative">
-              <button
-                onClick={() => toggleDropdown('textFormat')}
-                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded"
-              >
-                <Bold className="w-4 h-4" />
-                <span>Format</span>
-              </button>
-              {dropdown === 'textFormat' && (
-                <div className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-2 z-10">
-                  <button onClick={() => applyFormatting('bold')} className="block px-4 py-2 hover:bg-gray-100">
-                    Bold
-                  </button>
-                  <button onClick={() => applyFormatting('italic')} className="block px-4 py-2 hover:bg-gray-100">
-                    Italic
-                  </button>
-                  <button onClick={() => applyFormatting('underline')} className="block px-4 py-2 hover:bg-gray-100">
-                    Underline
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div className="relative">
-              <button
-                className="flex items-center space-x-1 px-2 py-1 hover:bg-purple-100 rounded add-link-button"
-                onClick={() => {
-                  const selection = window.getSelection();
-                  if (selection && selection.rangeCount > 0) {
-                    setSavedRange(selection.getRangeAt(0));
-                  }
-                  setShowLinkForm(!showLinkForm);
-                }}
-              >
-                <Link className="w-4 h-4" />
-                <span>Add Link</span>
-              </button>
-              
-              {showLinkForm && (
-                <div 
-                  ref={linkFormRef}
-                  className="absolute top-full left-0 mt-2 bg-white shadow-lg rounded p-4 z-10 w-80"
-                >
-                  <div className="space-y-3">
-                    <div>
-                      <label htmlFor="linkTitle" className="block text-sm font-medium text-gray-700 mb-1">
-                        Link Title
-                      </label>
-                      <input
-                        type="text"
-                        id="linkTitle"
-                        value={linkTitle}
-                        onChange={(e) => setLinkTitle(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="Enter title"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="linkUrl" className="block text-sm font-medium text-gray-700 mb-1">
-                        URL
-                      </label>
-                      <input
-                        type="url"
-                        id="linkUrl"
-                        value={linkUrl}
-                        onChange={(e) => setLinkUrl(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        placeholder="https://"
-                      />
-                    </div>
-                    
-                    <div className="flex justify-end space-x-2 pt-2">
-                      <button
-                        onClick={() => setShowLinkForm(false)}
-                        className="px-3 py-1 border border-gray-300 rounded hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={insertLink}
-                        className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700"
-                        disabled={!linkUrl.trim() || !linkTitle.trim()}
-                      >
-                        Insert
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="editor-container flex-1">
-            <div
-              ref={editorRef}
-              contentEditable={true}
-              onInput={handleContentChange}
-              className="w-full h-full focus:outline-none overflow-y-auto custom-scrollbar"
-              data-placeholder="Start writing your note..."
-            />
-
-            {showSuggestion && suggestion && suggestionPosition && (
-              <div
-                ref={suggestionRef}
-                className="suggestion-container"
-                style={{
-                  top: `${suggestionPosition.top}px`,
-                  left: `${suggestionPosition.left}px`,
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-semibold text-gray-500">Sugestão do Gemini</span>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={acceptSuggestion}
-                      className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
-                      title="Aceitar sugestão"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={rejectSuggestion}
-                      className="p-1 bg-red-500 text-white rounded hover:bg-red-600"
-                      title="Recusar sugestão"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="suggestion-text">{suggestion}</div>
-                <div className="shortcuts-hint">
-                  <span>
-                    <span className="shortcut-key">Tab</span> para aceitar
-                  </span>
-                  <span>
-                    <span className="shortcut-key">Esc</span> para recusar
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+          <ContentEditor
+            editorRef={editorRef}
+            handleContentChange={handleContentChange}
+            showSuggestion={showSuggestion}
+            suggestion={suggestion}
+            suggestionPosition={suggestionPosition}
+            acceptSuggestion={acceptSuggestion}
+            rejectSuggestion={rejectSuggestion}
+            suggestionRef={suggestionRef}
+          />
         </div>
 
         {showGeminiChat && (
           <div className={`chat-container ${chatEntering ? 'entering' : ''} ${chatClosing ? 'closing' : ''}`}>
             <GeminiChat 
               onClose={() => {
-                console.log("Closing chat");
                 setChatClosing(true);
                 setChatEntering(false);
                 setTimeout(() => {

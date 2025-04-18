@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { generateText, analyzeNote } from '../gemini';
-import { Note } from '../types';
+import { generateText, analyzeNote } from '../../gemini';
+import { Note } from '../../types';
 import { X, PaperclipIcon, CheckCircle, BookOpen, FileText, Unlink, Zap } from 'lucide-react';
 
 interface GeminiChatProps {
@@ -9,12 +9,12 @@ interface GeminiChatProps {
   allNotes: Note[];
 }
 
-function GeminiChat({ onClose, currentNote, allNotes }: GeminiChatProps) {
+function GeminiChat({ onClose, allNotes }: GeminiChatProps) {
   const [prompt, setPrompt] = useState<string>('');
   const [messages, setMessages] = useState<{role: string, content: string}[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [attachedNote, setAttachedNote] = useState<Note | null>(null); // Don't auto-attach currentNote
+  const [attachedNote, setAttachedNote] = useState<Note | null>(null); 
   const [showNoteSelection, setShowNoteSelection] = useState<boolean>(false);
   const [notesFilter, setNotesFilter] = useState<string>('');
   const [showCommandMenu, setShowCommandMenu] = useState<boolean>(false);
@@ -34,7 +34,6 @@ function GeminiChat({ onClose, currentNote, allNotes }: GeminiChatProps) {
   }, [messages]);
 
   useEffect(() => {
-    // Add welcome message
     if (messages.length === 0) {
       setMessages([{
         role: 'assistant',
@@ -45,8 +44,7 @@ function GeminiChat({ onClose, currentNote, allNotes }: GeminiChatProps) {
 
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
-    
-    // Check for special commands
+
     if (prompt.startsWith('/')) {
       handleSpecialCommand(prompt);
       return;
@@ -74,7 +72,6 @@ function GeminiChat({ onClose, currentNote, allNotes }: GeminiChatProps) {
     const lowerCommand = command.toLowerCase();
     let systemMessage = '';
     
-    // Handle no attached note case
     if (!attachedNote && !command.startsWith('/help')) {
       systemMessage = "Please attach a note before using this command.";
       setMessages(prev => [...prev, 

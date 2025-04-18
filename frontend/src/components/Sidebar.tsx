@@ -1,5 +1,4 @@
-import React from 'react';
-import { Note } from '../types';
+ import { Note } from '../types';
 import { Trash2 } from 'lucide-react';
 
 interface SidebarProps {
